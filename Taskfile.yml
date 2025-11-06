@@ -246,6 +246,7 @@ tasks:
       - task: tidy-check
       - task: lint
       - task: test-short
+      - echo "✓ All checks passed!"
 
   int:
     desc: Full end-to-end integration test cycle (build, run, test)
@@ -262,20 +263,36 @@ tasks:
       - echo "==> ✓ Integration tests completed successfully!"
 
   ci:
-    desc: Run CI pipeline (checks + build)
+    desc: Run CI pipeline locally (checks + build + short tests)
     cmds:
-      - task: check
-      - task: build-all
-
-  ci-full:
-    desc: Run full CI with integration tests
-    cmds:
+      - echo "==> Running CI pipeline locally..."
       - task: fmt-check
       - task: tidy-check
       - task: lint
-      - task: build-all
       - task: test-short
+      - task: build
+      - echo "==> ✓ CI pipeline passed!"
+
+  ci-full:
+    desc: Run full CI with integration tests (matches GitHub Actions)
+    cmds:
+      - echo "==> Running full CI pipeline (this may take several minutes)..."
+      - task: fmt-check
+      - task: tidy-check
+      - task: lint
+      - task: test-short
+      - task: build-all
       - task: int
+      - echo "==> ✓ Full CI pipeline passed!"
+
+  ci-local:
+    desc: Run complete CI pipeline locally (same as GitHub Actions)
+    cmds:
+      - echo "==> Running complete local CI (simulates GitHub Actions)..."
+      - task: install-tools
+      - task: deps
+      - task: ci-full
+      - echo "==> ✓ Local CI complete - ready to push!"
 
   pre-commit:
     desc: Run pre-commit checks
@@ -319,3 +336,12 @@ tasks:
     desc: Show help
     cmds:
       - task --list-all
+
+  ci-quick:
+    desc: Quick CI check (fmt, lint, test only - fast feedback)
+    cmds:
+      - echo "==> Running quick CI checks..."
+      - task: fmt-check
+      - task: lint
+      - task: test-short
+      - echo "==> ✓ Quick checks passed!"
