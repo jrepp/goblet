@@ -223,7 +223,7 @@ func (b *backupReaderWriter) gcBundle(name string) (time.Time, string, error) {
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(bundles)))
 
-	for _, name := range bundles[1:len(bundles)] {
+	for _, name := range bundles[1:] {
 		_ = b.provider.Delete(context.Background(), name)
 	}
 	n, _ := strconv.ParseInt(path.Base(bundles[0]), 10, 64)
