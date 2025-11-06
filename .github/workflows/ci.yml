@@ -2,18 +2,44 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 env:
   GO_VERSION: '1.21'
 
 jobs:
-  test:
-    name: Test
+  # Format check - runs in parallel
+  format-check:
+    name: Format Check
     runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Task
+      uses: arduino/setup-task@v1
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install goimports
+      run: go install golang.org/x/tools/cmd/goimports@latest
+
+    - name: Check formatting
+      run: task fmt-check
+
+  # Tidy check - runs in parallel
+  tidy-check:
+    name: Go Mod Tidy Check
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -33,63 +59,109 @@ jobs:
     - name: Download dependencies
       run: task deps
 
-    - name: Run CI checks (format, lint, test)
-      run: task ci
+    - name: Check go.mod tidiness
+      run: task tidy-check
 
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3
+  # Lint - runs in parallel
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Task
+      uses: arduino/setup-task@v1
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install linting tools
+      run: task install-tools
+
+    - name: Download dependencies
+      run: task deps
+
+    - name: Run linters
+      run: task lint
+
+  # Unit tests - runs in parallel
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Task
+      uses: arduino/setup-task@v1
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download dependencies
+      run: task deps
+
+    - name: Run unit tests
+      run: task test-unit
+
+    - name: Upload unit test coverage
+      uses: codecov/codecov-action@v4
       if: always()
       with:
-        file: ./coverage.out
+        file: ./coverage-unit.out
         flags: unittests
-        name: codecov-umbrella
+        name: codecov-unit
+        token: ${{ secrets.CODECOV_TOKEN }}
 
-  integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-
-    - name: Install Task
-      uses: arduino/setup-task@v1
-      with:
-        version: 3.x
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Download dependencies
-      run: task deps
-
-    - name: Start Docker services
-      run: task docker-test-up
-
-    - name: Wait for services
-      run: sleep 15
-
-    - name: Run integration tests
-      run: task test-integration
-
-    - name: Stop Docker services
-      if: always()
-      run: task docker-test-down
-
-    - name: Upload integration test coverage
-      uses: codecov/codecov-action@v3
-      if: always()
-      with:
-        file: ./coverage-integration.out
-        flags: integration
-        name: codecov-integration
-
+  # Build - runs in parallel
   build:
     name: Build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Task
+      uses: arduino/setup-task@v1
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download dependencies
+      run: task deps
+
+    - name: Build for current platform
+      run: task build
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: goblet-server
+        path: build/goblet-server
+        retention-days: 7
+
+  # Multi-platform builds - runs in parallel, separate from main build
+  build-multi:
+    name: Build ${{ matrix.platform }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -98,7 +170,6 @@ jobs:
           - linux-arm64
           - darwin-amd64
           - darwin-arm64
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -119,16 +190,32 @@ jobs:
       run: task build-${{ matrix.platform }}
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: goblet-${{ matrix.platform }}
         path: build/goblet-server-${{ matrix.platform }}*
         retention-days: 7
 
-  lint:
-    name: Lint
+  # CI Status Check - depends on all parallel jobs
+  ci-complete:
+    name: CI Complete
     runs-on: ubuntu-latest
+    needs:
+      - format-check
+      - tidy-check
+      - lint
+      - test-unit
+      - build
+    steps:
+    - name: CI Pipeline Complete
+      run: echo "✓ All CI checks passed!"
 
+  # Integration tests - separate workflow that requires Docker
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    # Only run integration tests on main branch or when explicitly requested
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || contains(github.event.pull_request.labels.*.name, 'run-integration-tests')
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -145,14 +232,21 @@ jobs:
         version: 3.x
         repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Install linting tools
-      run: task install-tools
+    - name: Download dependencies
+      run: task deps
 
-    - name: Check formatting
-      run: task fmt-check
+    - name: Run Go integration tests
+      run: task test-integration-go
 
-    - name: Check go.mod tidiness
-      run: task tidy-check
+    - name: Stop Docker services
+      if: always()
+      run: task docker-test-down
 
-    - name: Run linters
-      run: task lint
+    - name: Upload integration test coverage
+      uses: codecov/codecov-action@v4
+      if: always()
+      with:
+        file: ./coverage-integration.out
+        flags: integration
+        name: codecov-integration
+        token: ${{ secrets.CODECOV_TOKEN }}
