@@ -128,8 +128,8 @@ tasks:
       - echo "==> Cleaning up any existing test containers..."
       - |
         # Force remove any existing test containers
-        docker rm -f goblet-minio-test goblet-minio-setup-test 2>/dev/null || true
-        docker ps -a | grep goblet-minio-test | awk '{print $1}' | xargs docker rm -f 2>/dev/null || true
+        docker rm -f goblet-minio goblet-minio-setup 2>/dev/null || true
+        docker ps -a | grep goblet-minio | awk '{print $1}' | xargs docker rm -f 2>/dev/null || true
       - task: docker-test-down
       - echo "==> Starting Docker Compose test environment..."
       - task: docker-test-up
@@ -251,55 +251,64 @@ tasks:
       - docker buildx build --platform linux/amd64,linux/arm64 -t goblet-server:latest --load .
 
   up:
-    desc: Start Docker Compose services
+    desc: Start Docker Compose services (basic profile - no OIDC)
     cmds:
-      - docker-compose -f docker-compose.dev.yml up -d
+      - docker compose up -d
       - echo "Services started. Access goblet at http://localhost:8888"
       - echo "Metrics at http://localhost:8888/metrics"
       - echo "Health at http://localhost:8888/healthz"
 
-  down:
-    desc: Stop Docker Compose services
+  up-dev:
+    desc: Start Docker Compose services with OIDC (dev profile)
     cmds:
-      - docker-compose -f docker-compose.dev.yml down -v
+      - docker compose --profile dev up -d
+      - echo "Dev services started with OIDC. Access goblet at http://localhost:8890"
+      - echo "Metrics at http://localhost:8890/metrics"
+      - echo "Health at http://localhost:8890/healthz"
+      - echo "Dex OIDC at http://localhost:5556"
+
+  down:
+    desc: Stop Docker Compose services (all profiles)
+    cmds:
+      - docker compose --profile dev --profile test down -v
 
   docker-up:
-    desc: Start Docker Compose services (dev)
+    desc: Start Docker Compose services (alias for up-dev)
     cmds:
-      - task: up
+      - task: up-dev
 
   docker-down:
-    desc: Stop Docker Compose services (dev)
+    desc: Stop Docker Compose services (alias for down)
     cmds:
       - task: down
 
   docker-logs:
-    desc: View Docker Compose logs
+    desc: View Docker Compose logs (dev profile)
     cmds:
-      - docker-compose -f docker-compose.dev.yml logs -f
+      - docker compose --profile dev logs -f
 
   docker-test-up:
-    desc: Start Docker Compose test environment
+    desc: Start Docker Compose test environment (test profile)
     cmds:
-      - docker-compose -f docker-compose.test.yml up -d
+      - docker compose --profile test up -d
       - echo "Waiting for services to be healthy..."
       - |
         timeout 60 sh -c '
-          until docker-compose -f docker-compose.test.yml ps | grep -q "healthy\|Up"; do
+          until docker compose --profile test ps | grep -q "healthy\|Up"; do
             echo "Waiting for services..."
             sleep 2
           done
         ' || echo "Services started (timeout check)"
 
   docker-test-down:
-    desc: Stop Docker Compose test environment
+    desc: Stop Docker Compose test environment (test profile)
     cmds:
-      - docker-compose -f docker-compose.test.yml down -v
+      - docker compose --profile test down -v
 
   docker-test-logs:
     desc: View test environment logs
     cmds:
-      - docker-compose -f docker-compose.test.yml logs -f
+      - docker compose --profile test logs -f
 
   check:
     desc: Run all checks (fmt, tidy, lint, unit tests - no Docker)
@@ -414,7 +423,7 @@ tasks:
     vars:
       GOBLET_URL: http://localhost:8890
       TEST_REPO: github.com/google/goblet
-      VOLUME_NAME: github-cache-daemon_goblet_dev_tokens
+      VOLUME_NAME: github-cache-daemon_goblet_tokens
     cmds:
       - echo "🧪 Starting OIDC Integration Tests"
       - echo "   Goblet URL{{":"}} {{.GOBLET_URL}}"
@@ -435,7 +444,7 @@ tasks:
     cmds:
       - echo "Test 1{{":"}} Verify services are running"
       - |
-        SERVICES="goblet-token-generator-dev goblet-server-dev goblet-dex-dev goblet-minio-dev"
+        SERVICES="goblet-token-generator goblet-server goblet-dex goblet-minio"
         ALL_RUNNING=true
         for service in $SERVICES; do
           if docker ps | grep -q "$service"; then
@@ -458,7 +467,7 @@ tasks:
     internal: true
     silent: true
     vars:
-      VOLUME_NAME: github-cache-daemon_goblet_dev_tokens
+      VOLUME_NAME: github-cache-daemon_goblet_tokens
     cmds:
       - echo "Test 2{{":"}} Retrieve bearer token"
       - |
@@ -607,7 +616,7 @@ tasks:
       - echo ""
       - echo "Test 12{{":"}} Check server logs"
       - |
-        if docker logs goblet-server-dev 2>&1 | tail -20 | grep -qi "fatal\|panic"; then
+        if docker logs goblet-server 2>&1 | tail -20 | grep -qi "fatal\|panic"; then
           echo "✗ FAIL: Fatal errors in logs"
           exit 1
         else

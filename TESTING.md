@@ -205,9 +205,14 @@ No setup required - unit tests run without external dependencies.
 
 ### For Integration Tests
 
+The project uses a unified `docker-compose.yml` with profiles for different scenarios:
+- **basic** (default): Simple Minio + Goblet (no OIDC)
+- **dev**: Full stack with Dex OIDC + Minio + Goblet + token automation
+- **test**: Test environment with Dex + Minio for integration testing
+
 #### Docker Compose Test Environment
 ```bash
-# Start test environment
+# Start test environment (test profile)
 task docker-test-up
 
 # Run tests
@@ -222,8 +227,10 @@ task docker-test-logs
 
 #### Docker Compose Dev Environment (for OIDC tests)
 ```bash
-# Start dev environment
-task up
+# Start dev environment (dev profile with OIDC)
+task up-dev
+# or
+task docker-up
 
 # Run OIDC tests
 task test-oidc
@@ -233,6 +240,15 @@ task down
 
 # View logs
 task docker-logs
+```
+
+#### Basic Environment (no OIDC)
+```bash
+# Start basic environment (default profile)
+task up
+
+# Stop
+task down
 ```
 
 ## Troubleshooting
@@ -265,10 +281,45 @@ task docker-test-up
 task validate-token
 
 # Check dev services
-docker-compose -f docker-compose.dev.yml ps
+docker compose --profile dev ps
 
 # View server logs
-docker logs goblet-server-dev
+docker logs goblet-server
+```
+
+### Common Issues & Solutions
+
+#### Issue: HTTP 500 Instead of 401 on Authentication Failure
+**Symptom:** Server returns HTTP 500 Internal Server Error instead of HTTP 401 Unauthorized when requests lack authentication.
+
+**Root Cause:** OIDC authorizer returning plain Go errors instead of gRPC status errors.
+
+**Solution:** Modified `auth/oidc/authorizer.go` to return proper gRPC status codes:
+- `status.Error(codes.Unauthenticated, ...)` for missing/invalid tokens
+- `status.Errorf(codes.Internal, ...)` for internal errors
+
+#### Issue: Command-Line Flags Not Being Parsed
+**Symptom:** Goblet server not respecting command-line flags (e.g., `-port=8888`).
+
+**Root Cause:** Docker Compose `command: >` syntax creating a single string instead of array of arguments.
+
+**Solution:** Changed docker-compose.yml to use array syntax:
+```yaml
+command:
+  - -port=8888
+  - -cache_root=/cache
+```
+
+#### Issue: Empty Tokens Sent to Upstream (GitHub 401 Errors)
+**Symptom:** GitHub returns 401 errors even for public repositories when using anonymous token source.
+
+**Root Cause:** Code unconditionally sending empty Authorization headers.
+
+**Solution:** Only set Authorization headers when token has non-empty AccessToken:
+```go
+if t.AccessToken != "" {
+    t.SetAuthHeader(req)
+}
 ```
 
 ## Writing New Tests

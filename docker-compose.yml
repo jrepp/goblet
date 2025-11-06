@@ -1,16 +1,54 @@
 version: '3.8'
 
+# Unified Docker Compose configuration for Goblet Git cache proxy
+#
+# Profiles:
+#   - basic (default): Simple Minio + Goblet setup without OIDC
+#   - dev: Full development stack with Dex OIDC + Minio + Goblet + token automation
+#   - test: Test environment with Dex + Minio for integration testing
+#
+# Usage:
+#   docker compose up                    # Start basic profile
+#   docker compose --profile dev up      # Start dev profile
+#   docker compose --profile test up     # Start test profile
+
 services:
+  # =============================================================================
+  # Dex OIDC Provider (dev + test profiles)
+  # =============================================================================
+  dex:
+    image: ghcr.io/dexidp/dex:v2.37.0
+    container_name: goblet-dex
+    profiles: ["dev", "test"]
+    expose:
+      - "5556"  # HTTP API
+      - "5558"  # Telemetry
+    ports:
+      - "${DEX_PORT:-5556}:5556"  # Exposed for browser-based OAuth flow (dev only)
+    volumes:
+      - ./config/dex:/etc/dex:ro
+      - dex_data:/var/dex
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5556/dex/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - goblet
+
+  # =============================================================================
+  # Minio S3-compatible storage (all profiles)
+  # =============================================================================
   minio:
     image: minio/minio:latest
     container_name: goblet-minio
-    # No external ports exposed - Minio is internal only
     expose:
-      - "9000"
-      - "9001"
+      - "9000"    # API (internal only)
+      - "9001"    # Console UI (internal only)
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -18,56 +56,158 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
-      retries: 3
+      retries: 5
     networks:
-      - goblet-network
+      - goblet
 
-  createbuckets:
+  # =============================================================================
+  # Minio Setup - Create buckets (all profiles)
+  # =============================================================================
+  minio-setup:
     image: minio/mc:latest
     container_name: goblet-minio-setup
     depends_on:
-      - minio
-    networks:
-      - goblet-network
+      minio:
+        condition: service_healthy
+    profiles: ["", "basic", "dev", "test"]  # All profiles
     entrypoint: >
       /bin/sh -c "
-      sleep 5;
-      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb myminio/goblet-backups --ignore-existing;
-      /usr/bin/mc policy set download myminio/goblet-backups;
+      echo 'Setting up Minio buckets...';
+      /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      /usr/bin/mc mb myminio/${S3_BUCKET:-goblet-backups} --ignore-existing;
+      /usr/bin/mc policy set download myminio/${S3_BUCKET:-goblet-backups};
+      echo 'Minio setup complete';
       exit 0;
       "
+    networks:
+      - goblet
 
-  goblet:
+  # =============================================================================
+  # Token Generator - Automated dev token generation (dev profile only)
+  # =============================================================================
+  token-generator:
+    image: alpine:latest
+    container_name: goblet-token-generator
+    profiles: ["dev"]
+    volumes:
+      - ./scripts:/scripts:ro
+      - goblet_tokens:/tokens
+    depends_on:
+      dex:
+        condition: service_healthy
+    command: ["/bin/sh", "/scripts/docker-generate-token.sh"]
+    networks:
+      - goblet
+    restart: "no"
+
+  # =============================================================================
+  # Goblet Server - Basic profile (no OIDC)
+  # =============================================================================
+  goblet-basic:
     build:
       context: .
       dockerfile: Dockerfile
       args:
         ARCH: ${ARCH:-amd64}
     container_name: goblet-server
+    profiles: ["", "basic"]  # Default and basic profile
     ports:
-      - "8888:8888"  # Git proxy, health, and metrics endpoint
+      - "${GOBLET_PORT:-8888}:8888"  # Git proxy, health (/healthz), and metrics (/metrics)
     environment:
+      - PORT=8888
       - CACHE_ROOT=/cache
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
+      - BACKUP_MANIFEST_NAME=${BACKUP_MANIFEST_NAME:-dev}
+      - S3_ENDPOINT=${S3_ENDPOINT:-minio:9000}
+      - S3_BUCKET=${S3_BUCKET:-goblet-backups}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_USE_SSL=${S3_USE_SSL:-false}
     volumes:
-      - cache_data:/cache
+      - goblet_cache:/cache
     depends_on:
       - minio
-      - createbuckets
-    networks:
-      - goblet-network
-    command: >
-      /goblet-server
-      -port=8888
-      -cache_root=/cache
-      -storage_provider=s3
-      -s3_endpoint=minio:9000
-      -s3_bucket=goblet-backups
-      -s3_access_key=minioadmin
-      -s3_secret_key=minioadmin
-      -s3_region=us-east-1
-      -backup_manifest_name=dev
+      - minio-setup
     restart: unless-stopped
+    networks:
+      - goblet
+    command:
+      - -port=8888
+      - -cache_root=/cache
+      - -storage_provider=s3
+      - -s3_endpoint=minio:9000
+      - -s3_bucket=${S3_BUCKET:-goblet-backups}
+      - -s3_access_key=${S3_ACCESS_KEY:-minioadmin}
+      - -s3_secret_key=${S3_SECRET_KEY:-minioadmin}
+      - -s3_region=${S3_REGION:-us-east-1}
+      - -backup_manifest_name=${BACKUP_MANIFEST_NAME:-dev}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8888/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # =============================================================================
+  # Goblet Server - Dev profile (with OIDC)
+  # =============================================================================
+  goblet-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ARCH: ${ARCH:-amd64}
+    container_name: goblet-server
+    profiles: ["dev"]
+    ports:
+      - "${GOBLET_PORT:-8890}:8888"  # Different external port for dev
+    environment:
+      # Server configuration
+      - PORT=8888
+      - CACHE_ROOT=/cache
+
+      # OIDC/Dex authentication
+      - OIDC_ISSUER=${OIDC_ISSUER:-http://dex:5556/dex}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-goblet-server}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-goblet-secret-key-change-in-production}
+      - AUTH_MODE=${AUTH_MODE:-oidc}
+
+      # Storage provider configuration
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
+      - BACKUP_MANIFEST_NAME=${BACKUP_MANIFEST_NAME:-dev}
+
+      # S3/Minio configuration
+      - S3_ENDPOINT=${S3_ENDPOINT:-minio:9000}
+      - S3_BUCKET=${S3_BUCKET:-goblet-backups}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_USE_SSL=${S3_USE_SSL:-false}
+    volumes:
+      - goblet_cache:/cache
+      - goblet_tokens:/tokens  # Token export mount point
+    depends_on:
+      - dex
+      - minio
+      - minio-setup
+    restart: unless-stopped
+    networks:
+      - goblet
+    command:
+      - -port=8888
+      - -cache_root=/cache
+      - -auth_mode=oidc
+      - -oidc_issuer=http://dex:5556/dex
+      - -oidc_client_id=goblet-server
+      - -oidc_client_secret=goblet-secret-key-change-in-production
+      - -storage_provider=s3
+      - -s3_endpoint=minio:9000
+      - -s3_bucket=${S3_BUCKET:-goblet-backups}
+      - -s3_access_key=${S3_ACCESS_KEY:-minioadmin}
+      - -s3_secret_key=${S3_SECRET_KEY:-minioadmin}
+      - -s3_region=${S3_REGION:-us-east-1}
+      - -backup_manifest_name=${BACKUP_MANIFEST_NAME:-dev}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8888/healthz"]
       interval: 30s
@@ -76,9 +216,22 @@ services:
       start_period: 10s
 
 networks:
-  goblet-network:
+  goblet:
     driver: bridge
 
 volumes:
+  # Dex data (dev + test)
+  dex_data:
+    driver: local
+
+  # Minio data (all profiles)
   minio_data:
-  cache_data:
+    driver: local
+
+  # Goblet cache (basic + dev)
+  goblet_cache:
+    driver: local
+
+  # Token export volume (dev only)
+  goblet_tokens:
+    driver: local
