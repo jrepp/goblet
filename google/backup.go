@@ -52,10 +52,8 @@ func RunBackupProcess(config *goblet.ServerConfig, provider storage.Provider, ma
 	go func() {
 		timer := time.NewTimer(backupFrequency)
 		for {
-			select {
-			case <-timer.C:
-				rw.saveBackup()
-			}
+			<-timer.C
+			rw.saveBackup()
 			timer.Reset(backupFrequency)
 		}
 	}()
@@ -70,12 +68,12 @@ type backupReaderWriter struct {
 
 func (b *backupReaderWriter) recoverFromBackup() {
 	repos := b.readRepoList()
-	if repos == nil || len(repos) == 0 {
+	if len(repos) == 0 {
 		b.logger.Print("No repositories found from backup")
 		return
 	}
 
-	for rawURL, _ := range repos {
+	for rawURL := range repos {
 		u, err := url.Parse(rawURL)
 		if err != nil {
 			b.logger.Printf("Cannot parse %s as a URL. Skipping", rawURL)
@@ -94,8 +92,8 @@ func (b *backupReaderWriter) recoverFromBackup() {
 			continue
 		}
 
-		m.RecoverFromBundle(bundlePath)
-		os.Remove(bundlePath)
+		_ = m.RecoverFromBundle(bundlePath)
+		_ = os.Remove(bundlePath)
 	}
 }
 
@@ -171,7 +169,7 @@ func (b *backupReaderWriter) saveBackup() {
 			b.logger.Printf("cannot GC bundles for %s. Skipping: %v", u.String(), err)
 			return
 		}
-		// The bundle timestmap is seconds precision.
+		// The bundle timestamp is seconds precision.
 		if latestBundleSecPrecision.Unix() >= m.LastUpdateTime().Unix() {
 			b.logger.Printf("existing bundle for %s is up-to-date %s", u.String(), latestBundleSecPrecision.Format(time.RFC3339))
 		} else if err := b.backupManagedRepo(m); err != nil {
@@ -226,7 +224,7 @@ func (b *backupReaderWriter) gcBundle(name string) (time.Time, string, error) {
 	sort.Sort(sort.Reverse(sort.StringSlice(bundles)))
 
 	for _, name := range bundles[1:len(bundles)] {
-		b.provider.Delete(context.Background(), name)
+		_ = b.provider.Delete(context.Background(), name)
 	}
 	n, _ := strconv.ParseInt(path.Base(bundles[0]), 10, 64)
 	return time.Unix(n, 0), bundles[0], nil
@@ -246,7 +244,7 @@ func (b *backupReaderWriter) backupManagedRepo(m goblet.ManagedRepository) error
 	if err := m.WriteBundle(wc); err != nil {
 		return err
 	}
-	// Closing here will commit the file. Otherwise, the cancelled context
+	// Closing here will commit the file. Otherwise, the canceled context
 	// will discard the file.
 	wc.Close()
 	return nil
@@ -265,7 +263,7 @@ func (b *backupReaderWriter) writeManifestFile(manifestFile string, urls []strin
 			return err
 		}
 	}
-	// Closing here will commit the file. Otherwise, the cancelled context
+	// Closing here will commit the file. Otherwise, the canceled context
 	// will discard the file.
 	wc.Close()
 	return nil
@@ -293,7 +291,7 @@ func (b *backupReaderWriter) garbageCollectOldManifests(now time.Time) {
 		}
 		t := time.Unix(sec, 0)
 		if t.Before(threshold) {
-			b.provider.Delete(context.Background(), attrs.Name)
+			_ = b.provider.Delete(context.Background(), attrs.Name)
 		}
 	}
 }

@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -91,14 +90,14 @@ func openManagedRepository(config *ServerConfig, u *url.URL) (*managedRepository
 		}
 
 		op := noopOperation{}
-		runGit(op, localDiskPath, "init", "--bare")
-		runGit(op, localDiskPath, "config", "protocol.version", "2")
-		runGit(op, localDiskPath, "config", "uploadpack.allowfilter", "1")
-		runGit(op, localDiskPath, "config", "uploadpack.allowrefinwant", "1")
-		runGit(op, localDiskPath, "config", "repack.writebitmaps", "1")
+		_ = runGit(op, localDiskPath, "init", "--bare")
+		_ = runGit(op, localDiskPath, "config", "protocol.version", "2")
+		_ = runGit(op, localDiskPath, "config", "uploadpack.allowfilter", "1")
+		_ = runGit(op, localDiskPath, "config", "uploadpack.allowrefinwant", "1")
+		_ = runGit(op, localDiskPath, "config", "repack.writebitmaps", "1")
 		// It seems there's a bug in libcurl and HTTP/2 doens't work.
-		runGit(op, localDiskPath, "config", "http.version", "HTTP/1.1")
-		runGit(op, localDiskPath, "remote", "add", "--mirror=fetch", "origin", u.String())
+		_ = runGit(op, localDiskPath, "config", "http.version", "HTTP/1.1")
+		_ = runGit(op, localDiskPath, "remote", "add", "--mirror=fetch", "origin", u.String())
 	}
 
 	return m, nil
@@ -109,13 +108,13 @@ func logStats(command string, startTime time.Time, err error) {
 	if st, ok := status.FromError(err); ok {
 		code = st.Code()
 	}
-	stats.RecordWithTags(context.Background(),
+	_ = stats.RecordWithTags(context.Background(),
 		[]tag.Mutator{
 			tag.Insert(CommandTypeKey, command),
 			tag.Insert(CommandCanonicalStatusKey, code.String()),
 		},
 		OutboundCommandCount.M(1),
-		OutboundCommandProcessingTime.M(int64(time.Now().Sub(startTime)/time.Millisecond)),
+		OutboundCommandProcessingTime.M(int64(time.Since(startTime)/time.Millisecond)),
 	)
 }
 
@@ -151,7 +150,7 @@ func (r *managedRepository) lsRefsUpstream(command []*gitprotocolio.ProtocolV2Re
 	if resp.StatusCode != http.StatusOK {
 		errMessage := ""
 		if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") {
-			bs, err := ioutil.ReadAll(resp.Body)
+			bs, err := io.ReadAll(resp.Body)
 			if err == nil {
 				errMessage = string(bs)
 			}

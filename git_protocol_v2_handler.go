@@ -75,10 +75,10 @@ func handleV2Command(ctx context.Context, reporter gitProtocolErrorReporter, rep
 			reporter.reportError(ctx, startTime, err)
 			return false
 		} else if hasUpdate {
-			go repo.fetchUpstream()
+			go func() { _ = repo.fetchUpstream() }()
 		}
 
-		writeResp(w, resp)
+		_ = writeResp(w, resp)
 		reporter.reportError(ctx, startTime, nil)
 		return true
 
@@ -93,7 +93,7 @@ func handleV2Command(ctx context.Context, reporter gitProtocolErrorReporter, rep
 			reporter.reportError(ctx, startTime, err)
 			return false
 		} else if !hasAllWants {
-			ctx, err = tag.New(ctx, tag.Update(CommandCacheStateKey, "queried-upsteam"))
+			ctx, err = tag.New(ctx, tag.Update(CommandCacheStateKey, "queried-upstream"))
 			if err != nil {
 				reporter.reportError(ctx, startTime, err)
 				return false
@@ -130,7 +130,7 @@ func handleV2Command(ctx context.Context, reporter gitProtocolErrorReporter, rep
 					timer.Reset(checkFrequency)
 				}
 			}
-			stats.Record(ctx, UpstreamFetchWaitingTime.M(int64(time.Now().Sub(fetchStartTime)/time.Millisecond)))
+			stats.Record(ctx, UpstreamFetchWaitingTime.M(int64(time.Since(fetchStartTime)/time.Millisecond)))
 		}
 
 		if err := repo.serveFetchLocal(command, w); err != nil {

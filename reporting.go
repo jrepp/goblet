@@ -51,7 +51,7 @@ func (h *httpErrorReporter) reportError(err error) {
 		code = st.Code()
 		message = st.Message()
 	}
-	stats.RecordWithTags(
+	_ = stats.RecordWithTags(
 		h.req.Context(),
 		[]tag.Mutator{tag.Insert(CommandCanonicalStatusKey, code.String())},
 		InboundCommandCount.M(1),
@@ -89,15 +89,15 @@ func (h *gitProtocolHTTPErrorReporter) reportError(ctx context.Context, startTim
 	if st, ok := status.FromError(err); ok {
 		code = st.Code()
 	}
-	stats.RecordWithTags(
+	_ = stats.RecordWithTags(
 		ctx,
 		[]tag.Mutator{tag.Insert(CommandCanonicalStatusKey, code.String())},
 		InboundCommandCount.M(1),
-		InboundCommandProcessingTime.M(int64(time.Now().Sub(startTime)/time.Millisecond)),
+		InboundCommandProcessingTime.M(int64(time.Since(startTime)/time.Millisecond)),
 	)
 
 	if err != nil {
-		writeError(h.w, err)
+		_ = writeError(h.w, err)
 	}
 
 	if !serverErrorCodes[code] {

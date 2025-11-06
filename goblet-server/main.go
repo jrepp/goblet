@@ -52,14 +52,14 @@ var (
 	stackdriverProject      = flag.String("stackdriver_project", "", "GCP project ID used for the Stackdriver integration")
 	stackdriverLoggingLogID = flag.String("stackdriver_logging_log_id", "", "Stackdriver logging Log ID")
 
-	// Storage provider configuration
+	// Storage provider configuration.
 	storageProvider = flag.String("storage_provider", "", "Storage provider: 'gcs' or 's3'")
 
-	// GCS configuration
+	// GCS configuration.
 	backupBucketName   = flag.String("backup_bucket_name", "", "Name of the GCS bucket for backed-up repositories (GCS only)")
 	backupManifestName = flag.String("backup_manifest_name", "", "Name of the backup manifest")
 
-	// S3/Minio configuration
+	// S3/Minio configuration.
 	s3Endpoint        = flag.String("s3_endpoint", "", "S3 endpoint (e.g., localhost:9000 for Minio)")
 	s3Bucket          = flag.String("s3_bucket", "", "S3 bucket name")
 	s3AccessKeyID     = flag.String("s3_access_key", "", "S3 access key ID")
@@ -272,10 +272,18 @@ func main() {
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		io.WriteString(w, "ok\n")
+		_, _ = io.WriteString(w, "ok\n")
 	})
 	http.Handle("/", goblet.HTTPHandler(config))
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), nil))
+
+	// Create server with timeouts to prevent resource exhaustion
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", *port),
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 type LongRunningOperation struct {
