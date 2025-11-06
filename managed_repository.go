@@ -169,6 +169,103 @@ func (r *managedRepository) lsRefsUpstream(command []*gitprotocolio.ProtocolV2Re
 	return chunks, nil
 }
 
+// lsRefsLocal reads refs from the local git repository cache.
+// This is used as a fallback when upstream is unavailable or disabled.
+func (r *managedRepository) lsRefsLocal(command []*gitprotocolio.ProtocolV2RequestChunk) ([]*gitprotocolio.ProtocolV2ResponseChunk, error) {
+	// Open local git repository
+	g, err := git.PlainOpen(r.localDiskPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "local repository not available: %v", err)
+	}
+
+	// Parse ls-refs command options
+	refPrefixes := []string{}
+	symrefs := false
+	for _, chunk := range command {
+		if chunk.Argument == nil {
+			continue
+		}
+		arg := string(chunk.Argument)
+		if strings.HasPrefix(arg, "ref-prefix ") {
+			prefix := strings.TrimPrefix(arg, "ref-prefix ")
+			refPrefixes = append(refPrefixes, strings.TrimSpace(prefix))
+		} else if arg == "symrefs" {
+			symrefs = true
+		}
+	}
+
+	// List all refs
+	refs, err := g.References()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read local refs: %v", err)
+	}
+
+	// Build response chunks
+	chunks := []*gitprotocolio.ProtocolV2ResponseChunk{}
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		refName := ref.Name().String()
+
+		// Apply ref-prefix filters if specified
+		if len(refPrefixes) > 0 {
+			matched := false
+			for _, prefix := range refPrefixes {
+				if strings.HasPrefix(refName, prefix) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return nil
+			}
+		}
+
+		// Add ref line: "{hash} {refname}\n"
+		if ref.Type() == plumbing.HashReference {
+			line := fmt.Sprintf("%s %s\n", ref.Hash().String(), refName)
+			chunks = append(chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+				Response: []byte(line),
+			})
+
+			// Add symref attribute if requested and this is HEAD
+			if symrefs && ref.Name() == plumbing.HEAD {
+				if head, err := g.Head(); err == nil && head.Type() == plumbing.SymbolicReference {
+					attrLine := fmt.Sprintf("symref-target:%s\n", head.Target().String())
+					chunks = append(chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+						Response: []byte(attrLine),
+					})
+				}
+			}
+		} else if ref.Type() == plumbing.SymbolicReference {
+			// Resolve symbolic reference
+			resolved, err := g.Reference(ref.Target(), true)
+			if err == nil {
+				line := fmt.Sprintf("%s %s\n", resolved.Hash().String(), refName)
+				chunks = append(chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+					Response: []byte(line),
+				})
+				if symrefs {
+					attrLine := fmt.Sprintf("symref-target:%s\n", ref.Target().String())
+					chunks = append(chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+						Response: []byte(attrLine),
+					})
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to iterate refs: %v", err)
+	}
+
+	// Add flush packet to end the response
+	chunks = append(chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+		EndResponse: true,
+	})
+
+	return chunks, nil
+}
+
 func (r *managedRepository) fetchUpstream() (err error) {
 	op := r.startOperation("FetchUpstream")
 	defer func() {

@@ -17,6 +17,7 @@ package goblet
 import (
 	"context"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -53,16 +54,52 @@ func handleV2Command(ctx context.Context, reporter gitProtocolErrorReporter, rep
 	}
 	switch command[0].Command {
 	case "ls-refs":
-		ctx, err = tag.New(ctx, tag.Update(CommandCacheStateKey, "queried-upstream"))
+		var resp []*gitprotocolio.ProtocolV2ResponseChunk
+		var err error
+		var cacheState string
+
+		// Try upstream first if enabled
+		if repo.config.isUpstreamEnabled() {
+			ctx, err = tag.New(ctx, tag.Update(CommandCacheStateKey, "queried-upstream"))
+			if err != nil {
+				reporter.reportError(ctx, startTime, err)
+				return false
+			}
+
+			resp, err = repo.lsRefsUpstream(command)
+			cacheState = "queried-upstream"
+
+			// If upstream fails, try local fallback
+			if err != nil {
+				log.Printf("Upstream ls-refs failed (%v), attempting local fallback for %s", err, repo.localDiskPath)
+				resp, err = repo.lsRefsLocal(command)
+				if err == nil {
+					cacheState = "local-fallback"
+					// Warn if cache is stale
+					if time.Since(repo.lastUpdate) > 5*time.Minute {
+						log.Printf("Warning: serving stale ls-refs for %s (last update: %v ago)",
+							repo.localDiskPath, time.Since(repo.lastUpdate))
+					}
+				}
+			}
+		} else {
+			// Upstream disabled (testing mode) - serve from local only
+			resp, err = repo.lsRefsLocal(command)
+			cacheState = "local-only"
+		}
+
 		if err != nil {
 			reporter.reportError(ctx, startTime, err)
 			return false
 		}
 
-		resp, err := repo.lsRefsUpstream(command)
-		if err != nil {
-			reporter.reportError(ctx, startTime, err)
-			return false
+		// Update context tag if we used fallback
+		if cacheState != "queried-upstream" {
+			ctx, err = tag.New(ctx, tag.Update(CommandCacheStateKey, cacheState))
+			if err != nil {
+				reporter.reportError(ctx, startTime, err)
+				return false
+			}
 		}
 
 		refs, err := parseLsRefsResponse(resp)
@@ -71,11 +108,14 @@ func handleV2Command(ctx context.Context, reporter gitProtocolErrorReporter, rep
 			return false
 		}
 
-		if hasUpdate, err := repo.hasAnyUpdate(refs); err != nil {
-			reporter.reportError(ctx, startTime, err)
-			return false
-		} else if hasUpdate {
-			go func() { _ = repo.fetchUpstream() }()
+		// Only check for updates if we queried upstream successfully
+		if cacheState == "queried-upstream" {
+			if hasUpdate, err := repo.hasAnyUpdate(refs); err != nil {
+				reporter.reportError(ctx, startTime, err)
+				return false
+			} else if hasUpdate {
+				go func() { _ = repo.fetchUpstream() }()
+			}
 		}
 
 		_ = writeResp(w, resp)

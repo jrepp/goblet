@@ -72,6 +72,17 @@ type ServerConfig struct {
 	RequestLogger func(r *http.Request, status int, requestSize, responseSize int64, latency time.Duration)
 
 	LongRunningOperationLogger func(string, *url.URL) RunningOperation
+
+	// UpstreamEnabled controls whether upstream servers are contacted.
+	// nil or true = upstream enabled (production mode)
+	// false = upstream disabled (testing mode - serve only from local cache)
+	UpstreamEnabled *bool
+}
+
+// isUpstreamEnabled returns true if upstream servers should be contacted.
+// Defaults to true if UpstreamEnabled is nil.
+func (c *ServerConfig) isUpstreamEnabled() bool {
+	return c.UpstreamEnabled == nil || *c.UpstreamEnabled
 }
 
 type RunningOperation interface {
