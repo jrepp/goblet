@@ -84,7 +84,7 @@ func NewTestServer(config *TestServerConfig) *TestServer {
 		if err != nil {
 			log.Fatal(err)
 		}
-		config := &goblet.ServerConfig{
+		serverConfig := &goblet.ServerConfig{
 			LocalDiskCacheRoot: dir,
 			URLCanonializer:    s.testURLCanonicalizer,
 			RequestAuthorizer:  config.RequestAuthorizer,
@@ -92,7 +92,16 @@ func NewTestServer(config *TestServerConfig) *TestServer {
 			ErrorReporter:      config.ErrorReporter,
 			RequestLogger:      config.RequestLogger,
 		}
-		s.proxyServer = httptest.NewServer(goblet.HTTPHandler(config))
+
+		// Create a mux to handle both health check and git operations
+		mux := http.NewServeMux()
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprintf(w, "ok\n")
+		})
+		mux.Handle("/", goblet.HTTPHandler(serverConfig))
+
+		s.proxyServer = httptest.NewServer(mux)
 		s.ProxyServerURL = s.proxyServer.URL
 	}
 	return s
@@ -154,7 +163,16 @@ func (s *TestServer) CreateRandomCommitUpstream() (string, error) {
 		return "", err
 	}
 
-	_, err = pushClient.Run("-c", "http.extraHeader=Authorization: Bearer "+validServerAuthToken, "push", "-f", s.UpstreamServerURL, "master:master")
+	// Get current branch name or use HEAD
+	branchName, err := pushClient.Run("symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		// If no symbolic ref, push HEAD to master
+		_, err = pushClient.Run("-c", "http.extraHeader=Authorization: Bearer "+validServerAuthToken, "push", "-f", s.UpstreamServerURL, "HEAD:refs/heads/master")
+		return hash, err
+	}
+
+	branchName = strings.TrimSpace(branchName)
+	_, err = pushClient.Run("-c", "http.extraHeader=Authorization: Bearer "+validServerAuthToken, "push", "-f", s.UpstreamServerURL, branchName+":"+branchName)
 	return hash, err
 
 }
@@ -213,7 +231,7 @@ func (r GitRepo) CreateRandomCommit() (string, error) {
 	if _, err := r.Run("commit", "--allow-empty", "--message="+time.Now().String()); err != nil {
 		return "", err
 	}
-	return r.Run("rev-parse", "master")
+	return r.Run("rev-parse", "HEAD")
 }
 
 func (r GitRepo) Close() error {

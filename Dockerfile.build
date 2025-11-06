@@ -1,0 +1,43 @@
+# Multi-stage Dockerfile that builds from source
+# Use this if you want to build inside Docker
+FROM golang:1.24-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates make
+
+WORKDIR /build
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags="-w -s" -trimpath -o goblet-server ./goblet-server
+
+# Runtime stage
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates git
+
+WORKDIR /
+
+# Copy the binary from builder
+COPY --from=builder /build/goblet-server /goblet-server
+
+# Create cache directory
+RUN mkdir -p /cache
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/healthz || exit 1
+
+EXPOSE 8080
+
+ENTRYPOINT ["/goblet-server"]

@@ -28,10 +28,10 @@ import (
 
 	"cloud.google.com/go/errorreporting"
 	"cloud.google.com/go/logging"
-	"cloud.google.com/go/storage"
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/google/goblet"
 	googlehook "github.com/google/goblet/google"
+	"github.com/google/goblet/storage"
 	"github.com/google/uuid"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/tag"
@@ -52,8 +52,20 @@ var (
 	stackdriverProject      = flag.String("stackdriver_project", "", "GCP project ID used for the Stackdriver integration")
 	stackdriverLoggingLogID = flag.String("stackdriver_logging_log_id", "", "Stackdriver logging Log ID")
 
-	backupBucketName   = flag.String("backup_bucket_name", "", "Name of the GCS bucket for backed-up repositories")
+	// Storage provider configuration
+	storageProvider = flag.String("storage_provider", "", "Storage provider: 'gcs' or 's3'")
+
+	// GCS configuration
+	backupBucketName   = flag.String("backup_bucket_name", "", "Name of the GCS bucket for backed-up repositories (GCS only)")
 	backupManifestName = flag.String("backup_manifest_name", "", "Name of the backup manifest")
+
+	// S3/Minio configuration
+	s3Endpoint        = flag.String("s3_endpoint", "", "S3 endpoint (e.g., localhost:9000 for Minio)")
+	s3Bucket          = flag.String("s3_bucket", "", "S3 bucket name")
+	s3AccessKeyID     = flag.String("s3_access_key", "", "S3 access key ID")
+	s3SecretAccessKey = flag.String("s3_secret_key", "", "S3 secret access key")
+	s3Region          = flag.String("s3_region", "us-east-1", "S3 region")
+	s3UseSSL          = flag.Bool("s3_use_ssl", false, "Use SSL for S3 connections")
 
 	latencyDistributionAggregation = view.Distribution(
 		100,
@@ -236,13 +248,26 @@ func main() {
 		LongRunningOperationLogger: lrol,
 	}
 
-	if *backupBucketName != "" && *backupManifestName != "" {
-		gsClient, err := storage.NewClient(context.Background())
-		if err != nil {
-			log.Fatal(err)
+	if *storageProvider != "" && *backupManifestName != "" {
+		storageConfig := &storage.Config{
+			Provider:          *storageProvider,
+			GCSBucket:         *backupBucketName,
+			S3Endpoint:        *s3Endpoint,
+			S3Bucket:          *s3Bucket,
+			S3AccessKeyID:     *s3AccessKeyID,
+			S3SecretAccessKey: *s3SecretAccessKey,
+			S3Region:          *s3Region,
+			S3UseSSL:          *s3UseSSL,
 		}
 
-		googlehook.RunBackupProcess(config, gsClient.Bucket(*backupBucketName), *backupManifestName, backupLogger)
+		provider, err := storage.NewProvider(context.Background(), storageConfig)
+		if err != nil {
+			log.Fatalf("Cannot create storage provider: %v", err)
+		}
+		if provider != nil {
+			defer provider.Close()
+			googlehook.RunBackupProcess(config, provider, *backupManifestName, backupLogger)
+		}
 	}
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, req *http.Request) {

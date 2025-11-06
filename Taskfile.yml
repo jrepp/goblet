@@ -1,0 +1,321 @@
+version: '3'
+
+vars:
+  BINARY_NAME: goblet-server
+  BUILD_DIR: ./build
+  MAIN_PACKAGE: ./goblet-server
+  PLATFORMS:
+    sh: echo "linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  install-tools:
+    desc: Install required development tools
+    cmds:
+      - go install golang.org/x/tools/cmd/goimports@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      - go install honnef.co/go/tools/cmd/staticcheck@latest
+    silent: false
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+      - go clean -cache -testcache -modcache
+
+  tidy:
+    desc: Tidy and verify go.mod
+    cmds:
+      - go mod tidy
+      - go mod verify
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+      - goimports -w .
+
+  fmt-check:
+    desc: Check if code is formatted
+    cmds:
+      - |
+        if [ -n "$(gofmt -l .)" ]; then
+          echo "The following files are not formatted:"
+          gofmt -l .
+          exit 1
+        fi
+      - |
+        if [ -n "$(goimports -l .)" ]; then
+          echo "The following files need import formatting:"
+          goimports -l .
+          exit 1
+        fi
+
+  tidy-check:
+    desc: Check if go.mod is tidy
+    cmds:
+      - |
+        go mod tidy
+        if [ -n "$(git diff go.mod go.sum)" ]; then
+          echo "go.mod or go.sum is not tidy"
+          git diff go.mod go.sum
+          exit 1
+        fi
+
+  lint:
+    desc: Run linters
+    cmds:
+      - golangci-lint run --timeout 5m
+      - staticcheck ./...
+      - go vet ./...
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test -v -race -coverprofile=coverage.out ./...
+
+  test-short:
+    desc: Run short tests (no Docker required)
+    cmds:
+      - go test -short -v ./...
+
+  test-integration:
+    desc: Run integration tests with Docker
+    deps: [docker-test-up]
+    cmds:
+      - sleep 10  # Wait for services to be ready
+      - go test -v -race -coverprofile=coverage-integration.out ./testing/...
+      - defer: { task: docker-test-down }
+
+  test-parallel:
+    desc: Run integration tests in parallel
+    deps: [docker-test-up]
+    cmds:
+      - sleep 10
+      - go test -v -race -parallel 8 -timeout 10m ./testing/...
+      - defer: { task: docker-test-down }
+
+  test-watch:
+    desc: Watch for changes and run tests
+    cmds:
+      - |
+        while true; do
+          go test -short -v ./...
+          fswatch -1 -r . --exclude '.git' --exclude 'build' --include '\.go$'
+        done
+
+  coverage:
+    desc: Generate and view test coverage
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - open coverage.html
+
+  build:
+    desc: Build for current platform
+    cmds:
+      - go build -v -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PACKAGE}}
+
+  build-all:
+    desc: Build for all platforms
+    deps: [clean]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - task: build-multi-arch
+
+  build-multi-arch:
+    desc: Build for multiple architectures
+    cmds:
+      - |
+        for platform in {{.PLATFORMS}}; do
+          GOOS=$(echo $platform | cut -d'/' -f1)
+          GOARCH=$(echo $platform | cut -d'/' -f2)
+          output_name="{{.BUILD_DIR}}/{{.BINARY_NAME}}-${GOOS}-${GOARCH}"
+
+          if [ "$GOOS" = "windows" ]; then
+            output_name="${output_name}.exe"
+          fi
+
+          echo "Building for $GOOS/$GOARCH..."
+          GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=0 go build \
+            -ldflags="-w -s" \
+            -trimpath \
+            -o "$output_name" \
+            {{.MAIN_PACKAGE}}
+
+          if [ $? -ne 0 ]; then
+            echo "Failed to build for $GOOS/$GOARCH"
+            exit 1
+          fi
+        done
+
+  build-linux-amd64:
+    desc: Build for Linux AMD64
+    cmds:
+      - mkdir -p {{.BUILD_DIR}} || true
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -trimpath -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-linux-amd64 {{.MAIN_PACKAGE}}
+
+  build-linux-arm64:
+    desc: Build for Linux ARM64
+    cmds:
+      - mkdir -p {{.BUILD_DIR}} || true
+      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-w -s" -trimpath -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-linux-arm64 {{.MAIN_PACKAGE}}
+
+  build-darwin-amd64:
+    desc: Build for macOS AMD64
+    cmds:
+      - mkdir -p {{.BUILD_DIR}} || true
+      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -trimpath -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-darwin-amd64 {{.MAIN_PACKAGE}}
+
+  build-darwin-arm64:
+    desc: Build for macOS ARM64 (Apple Silicon)
+    cmds:
+      - mkdir -p {{.BUILD_DIR}} || true
+      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-w -s" -trimpath -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-darwin-arm64 {{.MAIN_PACKAGE}}
+
+  docker-build:
+    desc: Build Docker image for current platform (using pre-built binary)
+    deps: [build-linux-amd64]
+    cmds:
+      - docker build -t goblet-server:latest .
+
+  docker-build-arm64:
+    desc: Build Docker image for ARM64 (using pre-built binary)
+    deps: [build-linux-arm64]
+    cmds:
+      - docker build --build-arg ARCH=arm64 -t goblet-server:arm64 .
+
+  docker-build-from-source:
+    desc: Build Docker image from source (slower, no pre-built binary needed)
+    cmds:
+      - docker build -f Dockerfile.build -t goblet-server:latest .
+
+  docker-build-multi:
+    desc: Build multi-arch Docker images using buildx
+    deps: [build-linux-amd64, build-linux-arm64]
+    cmds:
+      - docker buildx create --use --name goblet-builder || true
+      - docker buildx build --platform linux/amd64,linux/arm64 -t goblet-server:latest --load .
+
+  docker-up:
+    desc: Start Docker Compose services (dev)
+    cmds:
+      - docker-compose -f docker-compose.dev.yml up -d
+
+  docker-down:
+    desc: Stop Docker Compose services (dev)
+    cmds:
+      - docker-compose -f docker-compose.dev.yml down -v
+
+  docker-logs:
+    desc: View Docker Compose logs
+    cmds:
+      - docker-compose -f docker-compose.dev.yml logs -f
+
+  docker-test-up:
+    desc: Start Docker Compose test environment
+    cmds:
+      - docker-compose -f docker-compose.test.yml up -d
+      - echo "Waiting for services to be healthy..."
+      - |
+        timeout 60 sh -c '
+          until docker-compose -f docker-compose.test.yml ps | grep -q "healthy\|Up"; do
+            echo "Waiting for services..."
+            sleep 2
+          done
+        ' || echo "Services started (timeout check)"
+
+  docker-test-down:
+    desc: Stop Docker Compose test environment
+    cmds:
+      - docker-compose -f docker-compose.test.yml down -v
+
+  docker-test-logs:
+    desc: View test environment logs
+    cmds:
+      - docker-compose -f docker-compose.test.yml logs -f
+
+  check:
+    desc: Run all checks (fmt, tidy, lint, test)
+    cmds:
+      - task: fmt-check
+      - task: tidy-check
+      - task: lint
+      - task: test-short
+
+  int:
+    desc: Full end-to-end integration test cycle (build, run, test)
+    cmds:
+      - echo "==> Starting full integration test cycle..."
+      - task: fmt
+      - task: lint
+      - task: build-linux-amd64
+      - task: docker-test-down  # Ensure clean state
+      - task: docker-test-up
+      - sleep 12  # Wait for services
+      - task: test-integration
+      - task: docker-test-down
+      - echo "==> ✓ Integration tests completed successfully!"
+
+  ci:
+    desc: Run CI pipeline (checks + build)
+    cmds:
+      - task: check
+      - task: build-all
+
+  ci-full:
+    desc: Run full CI with integration tests
+    cmds:
+      - task: fmt-check
+      - task: tidy-check
+      - task: lint
+      - task: build-all
+      - task: test-short
+      - task: int
+
+  pre-commit:
+    desc: Run pre-commit checks
+    cmds:
+      - task: fmt
+      - task: tidy
+      - task: lint
+      - task: test-short
+
+  deps:
+    desc: Download dependencies
+    cmds:
+      - go mod download
+
+  upgrade-deps:
+    desc: Upgrade all dependencies to latest
+    cmds:
+      - go get -u all
+      - go mod tidy
+
+  run:
+    desc: Run the server locally
+    cmds:
+      - go run {{.MAIN_PACKAGE}} -cache_root=/tmp/goblet-cache
+
+  run-minio:
+    desc: Run with Minio backend
+    cmds:
+      - |
+        go run {{.MAIN_PACKAGE}} \
+          -cache_root=/tmp/goblet-cache \
+          -storage_provider=s3 \
+          -s3_endpoint=localhost:9000 \
+          -s3_bucket=goblet-backups \
+          -s3_access_key=minioadmin \
+          -s3_secret_key=minioadmin \
+          -s3_region=us-east-1 \
+          -backup_manifest_name=dev
+
+  help:
+    desc: Show help
+    cmds:
+      - task --list-all

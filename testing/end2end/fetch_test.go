@@ -71,7 +71,7 @@ func TestFetch_ForceFetchUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := client.Run("-c", "http.extraHeader=Authorization: Bearer "+goblettest.ValidClientAuthToken, "fetch", "origin", "master"); err != nil {
+	if _, err := client.Run("-c", "http.extraHeader=Authorization: Bearer "+goblettest.ValidClientAuthToken, "fetch", "origin"); err != nil {
 		t.Fatal(err)
 	}
 
