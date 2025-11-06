@@ -1,4 +1,10 @@
-# Dockerfile for x86_64 (amd64) architecture
+# Dockerfile (Alpine variant) - Default multi-arch image
+#
+# NOTE: This is the default Dockerfile. For optimized variants, use:
+#   - Dockerfile.alpine (full-featured, recommended for development)
+#   - Dockerfile.distroless (minimal, recommended for production)
+#   - Dockerfile.scratch (smallest, for advanced use cases)
+#
 # Build the binary first with: task build-linux-amd64
 FROM alpine:latest
 

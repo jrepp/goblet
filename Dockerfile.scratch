@@ -1,0 +1,20 @@
+# Dockerfile.scratch - Minimal scratch-based image
+# Smallest possible image, no shell, no package manager
+# Suitable for production with minimal attack surface
+FROM scratch
+
+# Copy CA certificates from builder
+COPY --from=alpine:latest /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy the pre-built binary
+# ARCH is set by buildx for multi-platform builds
+ARG TARGETARCH
+COPY build/goblet-server-linux-${TARGETARCH} /goblet-server
+
+# Create cache directory structure
+COPY --from=alpine:latest --chown=1000:1000 /tmp /cache
+
+EXPOSE 8080
+
+ENTRYPOINT ["/goblet-server"]
+CMD ["-cache_root=/cache"]

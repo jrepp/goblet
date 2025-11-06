@@ -1,0 +1,34 @@
+# Dockerfile.alpine - Alpine-based image with shell and package manager
+# Smallest full-featured image with ca-certificates and git
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates git wget
+
+WORKDIR /
+
+# Copy the pre-built binary
+# ARCH is set by buildx for multi-platform builds
+ARG TARGETARCH
+COPY build/goblet-server-linux-${TARGETARCH} /goblet-server
+
+# Ensure binary is executable
+RUN chmod +x /goblet-server
+
+# Create cache directory
+RUN mkdir -p /cache
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/healthz || exit 1
+
+# Run as non-root user
+RUN addgroup -g 1000 goblet && \
+    adduser -D -u 1000 -G goblet goblet && \
+    chown -R goblet:goblet /cache
+USER goblet
+
+EXPOSE 8080
+
+ENTRYPOINT ["/goblet-server"]
+CMD ["-cache_root=/cache"]

@@ -1,0 +1,26 @@
+# Dockerfile.distroless - Google Distroless base image
+# Minimal image with libc and CA certificates, no shell
+# Good balance between size and compatibility
+FROM gcr.io/distroless/static-debian12:nonroot
+
+# Copy the pre-built binary
+# ARCH is set by buildx for multi-platform builds
+ARG TARGETARCH
+COPY --chown=nonroot:nonroot build/goblet-server-linux-${TARGETARCH} /goblet-server
+
+# Distroless runs as nonroot user (UID 65532) by default
+# Create cache directory with proper permissions in build stage
+FROM gcr.io/distroless/static-debian12:latest as builder
+COPY --from=alpine:latest /bin/mkdir /bin/mkdir
+RUN ["/bin/mkdir", "-p", "/cache"]
+
+# Final stage
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder --chown=nonroot:nonroot /cache /cache
+ARG TARGETARCH
+COPY --chown=nonroot:nonroot build/goblet-server-linux-${TARGETARCH} /goblet-server
+
+EXPOSE 8080
+
+ENTRYPOINT ["/goblet-server"]
+CMD ["-cache_root=/cache"]

@@ -1,9 +1,52 @@
+# Git
 .git
-.github
 .gitignore
+.gitattributes
+
+# Documentation
 *.md
-docker-compose.yml
-Dockerfile
-.dockerignore
+!README.md
+docs/
+.github/
+
+# Build artifacts (except what we need)
+build/
+!build/goblet-server-*
+
+# Testing
 testing/
+*_test.go
+coverage*.out
 *.test
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Task
+Taskfile.yml
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# CI/CD
+.github/
+.releaserc.json
+
+# Dependencies
+vendor/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

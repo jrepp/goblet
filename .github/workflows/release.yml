@@ -1,0 +1,329 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  GO_VERSION: '1.21'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # Calculate version and validate release
+  version:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+          echo "Tag: ${TAG}"
+
+  # Build binaries for all platforms
+  build-binaries:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: linux
+            arch: arm
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.version.outputs.version }}
+          CGO_ENABLED: 0
+        run: |
+          OUTPUT_NAME="goblet-server-${{ matrix.os }}-${{ matrix.arch }}"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            OUTPUT_NAME="${OUTPUT_NAME}.exe"
+          fi
+
+          mkdir -p build
+
+          go build \
+            -ldflags="-w -s -X main.version=${VERSION}" \
+            -trimpath \
+            -o "build/${OUTPUT_NAME}" \
+            ./goblet-server
+
+          # Create checksums
+          cd build
+          sha256sum "${OUTPUT_NAME}" > "${OUTPUT_NAME}.sha256"
+          cd ..
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            build/goblet-server-*
+            build/*.sha256
+          retention-days: 1
+
+  # Build and push Docker images
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: version
+    strategy:
+      matrix:
+        variant: [alpine, scratch, distroless]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binaries for Docker
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p build
+
+          # Build for amd64
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-w -s -X main.version=${VERSION}" \
+            -trimpath \
+            -o "build/goblet-server-linux-amd64" \
+            ./goblet-server
+
+          # Build for arm64
+          GOOS=linux GOARCH=arm64 go build \
+            -ldflags="-w -s -X main.version=${VERSION}" \
+            -trimpath \
+            -o "build/goblet-server-linux-arm64" \
+            ./goblet-server
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=auto
+            suffix=-${{ matrix.variant }},onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.variant }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Create GitHub Release with all artifacts
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [version, build-binaries, build-images]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: binary-*
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREVIOUS_TAG=$(git describe --abbrev=0 --tags ${{ needs.version.outputs.tag }}^ 2>/dev/null || echo "")
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "changelog=Initial release" >> $GITHUB_OUTPUT
+          else
+            # Generate changelog from commits
+            CHANGELOG=$(git log ${PREVIOUS_TAG}..${{ needs.version.outputs.tag }} \
+              --pretty=format:"* %s (%h)" \
+              --no-merges)
+
+            # Escape for GitHub Actions
+            CHANGELOG="${CHANGELOG//'%'/'%25'}"
+            CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
+            CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"
+
+            echo "changelog=${CHANGELOG}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Release ${{ needs.version.outputs.version }}
+          body: |
+            ## Release ${{ needs.version.outputs.version }}
+
+            ### Changes
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### Docker Images
+
+            Images are available in multiple variants:
+
+            **Alpine (recommended for development):**
+            ```bash
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}-alpine
+            ```
+
+            **Distroless (recommended for production):**
+            ```bash
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}-distroless
+            ```
+
+            **Scratch (minimal):**
+            ```bash
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}-scratch
+            ```
+
+            ### Multi-Architecture Support
+
+            All images support:
+            - `linux/amd64` (Intel/AMD 64-bit)
+            - `linux/arm64` (ARM 64-bit, Apple Silicon, AWS Graviton)
+
+            ### Installation
+
+            Download the appropriate binary for your platform from the assets below.
+
+            **Linux (amd64):**
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag }}/goblet-server-linux-amd64
+            chmod +x goblet-server-linux-amd64
+            ./goblet-server-linux-amd64 --help
+            ```
+
+            **macOS (Apple Silicon):**
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag }}/goblet-server-darwin-arm64
+            chmod +x goblet-server-darwin-arm64
+            ./goblet-server-darwin-arm64 --help
+            ```
+
+            ### Verification
+
+            Verify checksums:
+            ```bash
+            sha256sum -c goblet-server-linux-amd64.sha256
+            ```
+          files: |
+            artifacts/*
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+
+  # Update 'latest' tags for Docker images
+  update-latest:
+    name: Update Latest Tags
+    runs-on: ubuntu-latest
+    needs: [version, build-images]
+    if: "!contains(needs.version.outputs.version, '-')"
+    strategy:
+      matrix:
+        variant: [alpine, scratch, distroless]
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag as latest
+        run: |
+          SOURCE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}-${{ matrix.variant }}"
+          TARGET="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${{ matrix.variant }}"
+
+          docker buildx imagetools create -t "${TARGET}" "${SOURCE}"
+
+          # If alpine, also tag as 'latest' without suffix
+          if [ "${{ matrix.variant }}" = "alpine" ]; then
+            docker buildx imagetools create -t "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" "${SOURCE}"
+          fi
