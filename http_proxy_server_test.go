@@ -151,10 +151,10 @@ func TestHTTPProxyServer_ServeHTTP_ProtocolVersion(t *testing.T) {
 
 func TestHTTPProxyServer_ServeHTTP_Routes(t *testing.T) {
 	tests := []struct {
-		name           string
-		path           string
-		query          string
-		wantStatusCode int
+		name            string
+		path            string
+		query           string
+		wantStatusCode  int
 		wantContentType string
 	}{
 		{
