@@ -34,6 +34,7 @@ import (
 	"github.com/google/gitprotocolio"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
