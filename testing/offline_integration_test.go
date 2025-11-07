@@ -51,7 +51,7 @@ func TestOfflineModeWithWarmCache(t *testing.T) {
 
 	// Step 2: Disable upstream to simulate offline mode
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 	t.Logf("Disabled upstream connectivity")
 
 	// Step 3: Try to fetch with upstream disabled - should work from cache
@@ -195,7 +195,7 @@ func TestUpstreamRecovery(t *testing.T) {
 
 	// Disable upstream temporarily
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 	t.Logf("Disabled upstream (simulating outage)")
 
 	// Verify cache works
@@ -210,7 +210,7 @@ func TestUpstreamRecovery(t *testing.T) {
 
 	// Re-enable upstream (simulate recovery)
 	trueValue := true
-	ts.serverConfig.UpstreamEnabled = &trueValue
+	ts.serverConfig.SetUpstreamEnabled(&trueValue)
 	t.Logf("Re-enabled upstream (simulating recovery)")
 
 	// Create new commit in upstream

@@ -57,7 +57,7 @@ func TestLsRefsLocalWithMultipleBranches(t *testing.T) {
 
 	// Disable upstream
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 
 	// List refs with upstream disabled - should show all branches
 	client2 := NewLocalGitRepo()
@@ -114,7 +114,7 @@ func TestLsRefsLocalWithTags(t *testing.T) {
 
 	// Disable upstream
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 
 	// List refs - should show tags
 	client2 := NewLocalGitRepo()
@@ -201,7 +201,7 @@ func TestConcurrentOfflineRequests(t *testing.T) {
 
 	// Disable upstream
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 
 	// Run concurrent ls-remote requests
 	const numConcurrent = 10
@@ -303,7 +303,7 @@ func TestMixedOnlineOfflineOperations(t *testing.T) {
 
 	// 2. Go offline
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 
 	// 3. Offline: Fetch from cache (should work)
 	_, err = client.Run("-c", "http.extraHeader=Authorization: Bearer "+ValidClientAuthToken,
@@ -341,7 +341,7 @@ func TestMixedOnlineOfflineOperations(t *testing.T) {
 
 	// 6. Go back online
 	trueValue := true
-	ts.serverConfig.UpstreamEnabled = &trueValue
+	ts.serverConfig.SetUpstreamEnabled(&trueValue)
 
 	// 7. Online: Fetch should get new commit
 	_, err = client.Run("-c", "http.extraHeader=Authorization: Bearer "+ValidClientAuthToken,
@@ -458,7 +458,7 @@ func TestRefPrefixFiltering(t *testing.T) {
 
 	// Disable upstream
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 
 	// Test 1: List only feature branches
 	client2 := NewLocalGitRepo()
@@ -521,7 +521,7 @@ func TestSymbolicReferences(t *testing.T) {
 
 	// Disable upstream
 	falseValue := false
-	ts.serverConfig.UpstreamEnabled = &falseValue
+	ts.serverConfig.SetUpstreamEnabled(&falseValue)
 
 	// List refs with symrefs
 	client2 := NewLocalGitRepo()

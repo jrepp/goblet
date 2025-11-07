@@ -93,7 +93,10 @@ func NewTestServer(config *TestServerConfig) *TestServer {
 			TokenSource:        config.TokenSource,
 			ErrorReporter:      config.ErrorReporter,
 			RequestLogger:      config.RequestLogger,
-			UpstreamEnabled:    config.UpstreamEnabled,
+		}
+		// Set upstream enabled status using thread-safe method
+		if config.UpstreamEnabled != nil {
+			serverConfig.SetUpstreamEnabled(config.UpstreamEnabled)
 		}
 		s.serverConfig = serverConfig // Save for test access
 
