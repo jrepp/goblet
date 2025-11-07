@@ -334,7 +334,9 @@ func main() {
 		LocalDiskCacheRoot:         *cacheRoot,
 		URLCanonializer:            urlCanonicalizer,
 		RequestAuthorizer:          authorizer,
-		TokenSource:                ts,
+		TokenSource:                func(upstreamURL *url.URL) (*oauth2.Token, error) {
+			return ts.Token()
+		},
 		ErrorReporter:              er,
 		RequestLogger:              rl,
 		LongRunningOperationLogger: lrol,
