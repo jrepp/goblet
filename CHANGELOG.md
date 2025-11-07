@@ -44,4 +44,4 @@ When creating a new release, copy the following template and fill in the details
 - Security-related changes and fixes
 ```
 
-[Unreleased]: https://github.com/jrepp/github-cache-daemon/compare/main...HEAD
+[Unreleased]: https://github.com/jrepp/goblet/compare/main...HEAD
