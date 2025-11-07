@@ -90,9 +90,11 @@ func NewTestServer(config *TestServerConfig) *TestServer {
 			LocalDiskCacheRoot: dir,
 			URLCanonializer:    s.testURLCanonicalizer,
 			RequestAuthorizer:  config.RequestAuthorizer,
-			TokenSource:        config.TokenSource,
-			ErrorReporter:      config.ErrorReporter,
-			RequestLogger:      config.RequestLogger,
+			TokenSource: func(upstreamURL *url.URL) (*oauth2.Token, error) {
+				return config.TokenSource.Token()
+			},
+			ErrorReporter: config.ErrorReporter,
+			RequestLogger: config.RequestLogger,
 		}
 		// Set upstream enabled status using thread-safe method
 		if config.UpstreamEnabled != nil {
