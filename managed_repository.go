@@ -319,6 +319,7 @@ func (r *managedRepository) fetchUpstream() (err error) {
 		splitGitFetch = true
 	}
 
+	var t *oauth2.Token
 	startTime := time.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
