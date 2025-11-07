@@ -1,0 +1,180 @@
+# GoReleaser configuration for Goblet
+# Documentation: https://goreleaser.com
+
+version: 2
+
+# Before hooks - run before building
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+# Build configuration
+builds:
+  - id: goblet-server
+    main: ./goblet-server
+    binary: goblet-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Ignore arm64 on windows (not commonly used)
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
+      - -X main.BuiltBy=goreleaser
+    flags:
+      - -trimpath
+
+# Archive configuration
+archives:
+  - id: goblet
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - LICENSE*
+      - README*
+      - CHANGELOG*
+
+# Checksum configuration
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# Snapshot builds (non-tagged commits)
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# Changelog configuration
+changelog:
+  use: github
+  sort: asc
+  abbrev: 7
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Documentation'
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: 'Tests'
+      regexp: '^.*?test(\([[:word:]]+\))??!?:.+$'
+      order: 4
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^chore:'
+      - '^ci:'
+      - '^style:'
+      - '^refactor:'
+      - Merge pull request
+      - Merge branch
+
+# GitHub Release configuration
+release:
+  github:
+    owner: jrepp
+    name: github-cache-daemon
+  draft: false
+  prerelease: auto  # Automatically detect pre-releases based on semver
+  mode: replace
+  header: |
+    ## Goblet {{ .Tag }} ({{ .Date }})
+
+    Welcome to this new release of Goblet!
+
+  footer: |
+    ## Docker Images
+
+    Multi-arch Docker images are available:
+
+    ```bash
+    docker pull ghcr.io/jrepp/goblet-server:{{ .Tag }}
+    docker pull ghcr.io/jrepp/goblet-server:latest
+    ```
+
+    ## Verification
+
+    Verify the integrity of downloaded binaries using the checksums file:
+
+    ```bash
+    sha256sum -c checksums.txt
+    ```
+
+    **Full Changelog**: https://github.com/jrepp/github-cache-daemon/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Docker images
+dockers:
+  - image_templates:
+      - "ghcr.io/jrepp/goblet-server:{{ .Tag }}-amd64"
+      - "ghcr.io/jrepp/goblet-server:latest-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    extra_files:
+      - LICENSE
+
+  - image_templates:
+      - "ghcr.io/jrepp/goblet-server:{{ .Tag }}-arm64"
+      - "ghcr.io/jrepp/goblet-server:latest-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    goarch: arm64
+    extra_files:
+      - LICENSE
+
+# Docker manifests for multi-arch images
+docker_manifests:
+  - name_template: ghcr.io/jrepp/goblet-server:{{ .Tag }}
+    image_templates:
+      - ghcr.io/jrepp/goblet-server:{{ .Tag }}-amd64
+      - ghcr.io/jrepp/goblet-server:{{ .Tag }}-arm64
+
+  - name_template: ghcr.io/jrepp/goblet-server:latest
+    image_templates:
+      - ghcr.io/jrepp/goblet-server:latest-amd64
+      - ghcr.io/jrepp/goblet-server:latest-arm64
+
+# Announce releases (optional - configure as needed)
+# announce:
+#   skip: '{{gt .Patch 0}}'  # Only announce major and minor releases
+#   discord:
+#     enabled: true
+#     message_template: 'Goblet {{ .Tag }} is out! Check it out at {{ .ReleaseURL }}'

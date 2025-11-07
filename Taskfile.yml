@@ -661,3 +661,42 @@ tasks:
       FORMAT: access_token
     cmds:
       - bash scripts/get-token.sh {{.FORMAT}}
+
+  # GoReleaser tasks for release management
+  release-check:
+    desc: Validate GoReleaser configuration
+    cmds:
+      - |
+        if ! command -v goreleaser &> /dev/null; then
+          echo "❌ GoReleaser not found. Install it with:"
+          echo "  brew install goreleaser (macOS)"
+          echo "  go install github.com/goreleaser/goreleaser@latest"
+          exit 1
+        fi
+      - goreleaser check
+      - echo "✓ GoReleaser configuration is valid"
+
+  release-snapshot:
+    desc: Build release snapshot (all platforms, no publish)
+    deps: [release-check]
+    cmds:
+      - echo "Building release snapshot..."
+      - goreleaser build --snapshot --clean
+      - echo "✓ Binaries built in dist/ directory"
+      - ls -lh dist/
+
+  release-test:
+    desc: Test full release process (no publish)
+    deps: [release-check]
+    cmds:
+      - echo "Testing full release process..."
+      - goreleaser release --snapshot --clean --skip=publish
+      - echo "✓ Release test complete"
+      - echo ""
+      - echo "Generated artifacts:"
+      - ls -lh dist/*.tar.gz dist/*.zip dist/checksums.txt 2>/dev/null || true
+
+  release-local:
+    desc: Build and test locally (alias for release-test)
+    cmds:
+      - task: release-test
