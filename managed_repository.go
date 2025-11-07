@@ -172,6 +172,134 @@ func (r *managedRepository) lsRefsUpstream(command []*gitprotocolio.ProtocolV2Re
 	return chunks, nil
 }
 
+// lsRefsOptions holds parsed ls-refs command options.
+type lsRefsOptions struct {
+	refPrefixes []string
+	symrefs     bool
+}
+
+// parseLsRefsOptions extracts options from ls-refs command.
+func parseLsRefsOptions(command []*gitprotocolio.ProtocolV2RequestChunk) lsRefsOptions {
+	opts := lsRefsOptions{
+		refPrefixes: []string{},
+	}
+	for _, chunk := range command {
+		if chunk.Argument == nil {
+			continue
+		}
+		arg := string(chunk.Argument)
+		if strings.HasPrefix(arg, "ref-prefix ") {
+			prefix := strings.TrimPrefix(arg, "ref-prefix ")
+			opts.refPrefixes = append(opts.refPrefixes, strings.TrimSpace(prefix))
+		} else if arg == "symrefs" {
+			opts.symrefs = true
+		}
+	}
+	return opts
+}
+
+// matchesRefPrefix checks if a ref name matches any of the given prefixes.
+func matchesRefPrefix(refName string, prefixes []string) bool {
+	if len(prefixes) == 0 {
+		return true
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(refName, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// addHashRefChunks adds chunks for a hash reference.
+func addHashRefChunks(chunks *[]*gitprotocolio.ProtocolV2ResponseChunk, ref *plumbing.Reference, g *git.Repository, symrefs bool) {
+	refName := ref.Name().String()
+	line := fmt.Sprintf("%s %s\n", ref.Hash().String(), refName)
+	*chunks = append(*chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+		Response: []byte(line),
+	})
+
+	// Add symref attribute if requested and this is HEAD
+	if symrefs && ref.Name() == plumbing.HEAD {
+		if head, err := g.Head(); err == nil && head.Type() == plumbing.SymbolicReference {
+			attrLine := fmt.Sprintf("symref-target:%s\n", head.Target().String())
+			*chunks = append(*chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+				Response: []byte(attrLine),
+			})
+		}
+	}
+}
+
+// addSymbolicRefChunks adds chunks for a symbolic reference.
+func addSymbolicRefChunks(chunks *[]*gitprotocolio.ProtocolV2ResponseChunk, ref *plumbing.Reference, g *git.Repository, symrefs bool) {
+	resolved, err := g.Reference(ref.Target(), true)
+	if err != nil {
+		return
+	}
+
+	refName := ref.Name().String()
+	line := fmt.Sprintf("%s %s\n", resolved.Hash().String(), refName)
+	*chunks = append(*chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+		Response: []byte(line),
+	})
+
+	if symrefs {
+		attrLine := fmt.Sprintf("symref-target:%s\n", ref.Target().String())
+		*chunks = append(*chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+			Response: []byte(attrLine),
+		})
+	}
+}
+
+// lsRefsLocal reads refs from the local git repository cache.
+// This is used as a fallback when upstream is unavailable or disabled.
+func (r *managedRepository) lsRefsLocal(command []*gitprotocolio.ProtocolV2RequestChunk) ([]*gitprotocolio.ProtocolV2ResponseChunk, error) {
+	// Open local git repository
+	g, err := git.PlainOpen(r.localDiskPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "local repository not available: %v", err)
+	}
+
+	// Parse ls-refs command options
+	opts := parseLsRefsOptions(command)
+
+	// List all refs
+	refs, err := g.References()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read local refs: %v", err)
+	}
+
+	// Build response chunks
+	chunks := []*gitprotocolio.ProtocolV2ResponseChunk{}
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		refName := ref.Name().String()
+
+		// Apply ref-prefix filters if specified
+		if !matchesRefPrefix(refName, opts.refPrefixes) {
+			return nil
+		}
+
+		// Add ref chunks based on type
+		if ref.Type() == plumbing.HashReference {
+			addHashRefChunks(&chunks, ref, g, opts.symrefs)
+		} else if ref.Type() == plumbing.SymbolicReference {
+			addSymbolicRefChunks(&chunks, ref, g, opts.symrefs)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to iterate refs: %v", err)
+	}
+
+	// Add flush packet to end the response
+	chunks = append(chunks, &gitprotocolio.ProtocolV2ResponseChunk{
+		EndResponse: true,
+	})
+
+	return chunks, nil
+}
+
 func (r *managedRepository) fetchUpstream() (err error) {
 	op := r.startOperation("FetchUpstream")
 	defer func() {

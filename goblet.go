@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"go.opencensus.io/stats"
@@ -72,6 +73,24 @@ type ServerConfig struct {
 	RequestLogger func(r *http.Request, status int, requestSize, responseSize int64, latency time.Duration)
 
 	LongRunningOperationLogger func(string, *url.URL) RunningOperation
+
+	// upstreamEnabled controls whether upstream servers are contacted.
+	// Use SetUpstreamEnabled/IsUpstreamEnabled for thread-safe access.
+	upstreamEnabled atomic.Pointer[bool]
+}
+
+// SetUpstreamEnabled sets whether upstream servers should be contacted (thread-safe).
+// Pass nil or true to enable upstream (production mode).
+// Pass false to disable upstream (testing mode - serve only from local cache).
+func (c *ServerConfig) SetUpstreamEnabled(enabled *bool) {
+	c.upstreamEnabled.Store(enabled)
+}
+
+// isUpstreamEnabled returns true if upstream servers should be contacted (thread-safe).
+// Defaults to true if not explicitly set to false.
+func (c *ServerConfig) isUpstreamEnabled() bool {
+	enabled := c.upstreamEnabled.Load()
+	return enabled == nil || *enabled
 }
 
 type RunningOperation interface {

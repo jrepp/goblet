@@ -58,6 +58,7 @@ type TestServer struct {
 	UpstreamServerURL string
 	proxyServer       *httptest.Server
 	ProxyServerURL    string
+	serverConfig      *goblet.ServerConfig // Exposed for testing
 }
 
 type TestServerConfig struct {
@@ -65,6 +66,7 @@ type TestServerConfig struct {
 	TokenSource       oauth2.TokenSource
 	ErrorReporter     func(*http.Request, error)
 	RequestLogger     func(r *http.Request, status int, requestSize, responseSize int64, latency time.Duration)
+	UpstreamEnabled   *bool // Optional: set to false to disable upstream (for testing)
 }
 
 func NewTestServer(config *TestServerConfig) *TestServer {
@@ -92,6 +94,11 @@ func NewTestServer(config *TestServerConfig) *TestServer {
 			ErrorReporter:      config.ErrorReporter,
 			RequestLogger:      config.RequestLogger,
 		}
+		// Set upstream enabled status using thread-safe method
+		if config.UpstreamEnabled != nil {
+			serverConfig.SetUpstreamEnabled(config.UpstreamEnabled)
+		}
+		s.serverConfig = serverConfig // Save for test access
 
 		// Create a mux to handle both health check and git operations
 		mux := http.NewServeMux()
