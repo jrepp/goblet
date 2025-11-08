@@ -331,7 +331,7 @@ func (r *managedRepository) fetchUpstream() (err error) {
 			return err
 		}
 		if t.AccessToken != "" {
-			err = runGit(op, r.localDiskPath, "-c", "http.extraHeader=Authorization: Bearer "+t.AccessToken, "fetch", "--progress", "-f", "-n", "origin", "refs/heads/*:refs/heads/*", "refs/changes/*:refs/changes/*")
+			err = runGit(op, r.localDiskPath, "-c", "http.extraHeader=Authorization: "+t.Type()+" "+t.AccessToken, "fetch", "--progress", "-f", "-n", "origin", "refs/heads/*:refs/heads/*", "refs/changes/*:refs/changes/*")
 		} else {
 			err = runGit(op, r.localDiskPath, "fetch", "--progress", "-f", "-n", "origin", "refs/heads/*:refs/heads/*", "refs/changes/*:refs/changes/*")
 		}
@@ -343,7 +343,7 @@ func (r *managedRepository) fetchUpstream() (err error) {
 			return err
 		}
 		if t.AccessToken != "" {
-			err = runGit(op, r.localDiskPath, "-c", "http.extraHeader=Authorization: Bearer "+t.AccessToken, "fetch", "--progress", "-f", "origin")
+			err = runGit(op, r.localDiskPath, "-c", "http.extraHeader=Authorization: "+t.Type()+" "+t.AccessToken, "fetch", "--progress", "-f", "origin")
 		} else {
 			err = runGit(op, r.localDiskPath, "fetch", "--progress", "-f", "origin")
 		}
