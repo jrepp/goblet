@@ -26,8 +26,9 @@ import (
 
 // IntegrationTestSetup manages the Docker Compose environment for integration tests.
 type IntegrationTestSetup struct {
-	composeFile string
-	projectName string
+	composeFile   string
+	projectName   string
+	useComposeV2  bool
 }
 
 // NewIntegrationTestSetup creates a new integration test setup.
@@ -36,6 +37,18 @@ func NewIntegrationTestSetup() *IntegrationTestSetup {
 		composeFile: "../docker-compose.test.yml",
 		projectName: "goblet-test",
 	}
+}
+
+// getComposeCommand returns the appropriate docker compose command based on what's available.
+func (its *IntegrationTestSetup) getComposeCommand(ctx context.Context, args ...string) *exec.Cmd {
+	if its.useComposeV2 {
+		// Use docker compose (v2)
+		composeArgs := append([]string{"compose", "-f", its.composeFile, "-p", its.projectName}, args...)
+		return exec.CommandContext(ctx, "docker", composeArgs...)
+	}
+	// Use docker-compose (v1)
+	composeArgs := append([]string{"-f", its.composeFile, "-p", its.projectName}, args...)
+	return exec.CommandContext(ctx, "docker-compose", composeArgs...)
 }
 
 // Start brings up the Docker Compose environment.
@@ -54,6 +67,7 @@ func (its *IntegrationTestSetup) Start(t *testing.T) {
 			t.Skip("Docker Compose is not available, skipping integration tests")
 			return
 		}
+		its.useComposeV2 = true
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -62,13 +76,13 @@ func (its *IntegrationTestSetup) Start(t *testing.T) {
 	t.Log("Starting Docker Compose environment for integration tests...")
 
 	// Stop any existing services first
-	stopCmd := exec.CommandContext(ctx, "docker-compose", "-f", its.composeFile, "-p", its.projectName, "down", "-v")
+	stopCmd := its.getComposeCommand(ctx, "down", "-v")
 	stopCmd.Stdout = os.Stdout
 	stopCmd.Stderr = os.Stderr
 	_ = stopCmd.Run() // Ignore errors if nothing is running
 
 	// Start services
-	startCmd := exec.CommandContext(ctx, "docker-compose", "-f", its.composeFile, "-p", its.projectName, "up", "-d")
+	startCmd := its.getComposeCommand(ctx, "up", "-d")
 	startCmd.Stdout = os.Stdout
 	startCmd.Stderr = os.Stderr
 	if err := startCmd.Run(); err != nil {
@@ -88,7 +102,7 @@ func (its *IntegrationTestSetup) Stop(t *testing.T) {
 	defer cancel()
 
 	t.Log("Stopping Docker Compose environment...")
-	cmd := exec.CommandContext(ctx, "docker-compose", "-f", its.composeFile, "-p", its.projectName, "down", "-v")
+	cmd := its.getComposeCommand(ctx, "down", "-v")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
