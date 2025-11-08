@@ -205,11 +205,18 @@ func TestStorageProviderUploadDownload(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	t.Log("=== Starting TestStorageProviderUploadDownload ===")
+	startTime := time.Now()
+
 	setup := NewIntegrationTestSetup()
+	t.Log("Starting integration test setup...")
 	setup.Start(t)
 	defer setup.Stop(t)
+	t.Logf("Setup completed in %v", time.Since(startTime))
 
 	accessKey, secretKey := setup.GetMinioCredentials()
+	t.Logf("Minio credentials obtained - endpoint: %s, bucket: %s",
+		setup.GetMinioEndpoint(), setup.GetMinioBucket())
 
 	storageConfig := &storage.Config{
 		Provider:          "s3",
@@ -224,55 +231,118 @@ func TestStorageProviderUploadDownload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	t.Log("Creating storage provider...")
+	providerStartTime := time.Now()
 	provider, err := storage.NewProvider(ctx, storageConfig)
 	if err != nil {
 		t.Fatalf("Failed to create storage provider: %v", err)
 	}
 	defer provider.Close()
+	t.Logf("Storage provider created in %v", time.Since(providerStartTime))
 
 	// Test data
 	testData := []byte("This is test data for storage provider")
-	testKey := "test-" + time.Now().Format("20060102-150405") + ".dat"
+	testKey := "test-" + time.Now().Format("20060102-150405.000") + ".dat"
+	t.Logf("Test key: %s, test data size: %d bytes", testKey, len(testData))
 
 	// Upload (write)
+	t.Log("Getting writer...")
+	writeStartTime := time.Now()
 	writer, err := provider.Writer(ctx, testKey)
 	if err != nil {
 		t.Fatalf("Failed to get writer: %v", err)
 	}
-	if _, err := writer.Write(testData); err != nil {
+	t.Logf("Writer obtained in %v", time.Since(writeStartTime))
+
+	t.Log("Writing data...")
+	writeDataStartTime := time.Now()
+	bytesWritten, err := writer.Write(testData)
+	if err != nil {
 		writer.Close()
 		t.Fatalf("Failed to write: %v", err)
 	}
+	t.Logf("Wrote %d bytes in %v", bytesWritten, time.Since(writeDataStartTime))
+
+	t.Log("Closing writer...")
+	closeStartTime := time.Now()
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Failed to close writer: %v", err)
 	}
+	t.Logf("Writer closed in %v", time.Since(closeStartTime))
+	t.Logf("Total upload time: %v", time.Since(writeStartTime))
 
-	t.Logf("Uploaded test data with key: %s", testKey)
+	// Add a small delay to ensure the background goroutine completes
+	// This helps diagnose race conditions
+	t.Log("Waiting briefly for upload to stabilize...")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify object exists before attempting download
+	t.Log("Verifying object exists in storage...")
+	verifyStartTime := time.Now()
+	accessKey2, secretKey2 := setup.GetMinioCredentials()
+	minioClient, err := minio.New(setup.GetMinioEndpoint(), &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey2, secretKey2, ""),
+		Secure: false,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create verification Minio client: %v", err)
+	}
+
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer verifyCancel()
+
+	objInfo, err := minioClient.StatObject(verifyCtx, setup.GetMinioBucket(), testKey, minio.StatObjectOptions{})
+	if err != nil {
+		t.Fatalf("Object verification failed - object not found after upload: %v", err)
+	}
+	t.Logf("Object verified in %v - size: %d bytes, etag: %s",
+		time.Since(verifyStartTime), objInfo.Size, objInfo.ETag)
 
 	// Download (read)
+	t.Log("Getting reader...")
+	readStartTime := time.Now()
 	reader, err := provider.Reader(ctx, testKey)
 	if err != nil {
 		t.Fatalf("Failed to get reader: %v", err)
 	}
 	defer reader.Close()
+	t.Logf("Reader obtained in %v", time.Since(readStartTime))
 
+	t.Log("Reading data...")
+	readDataStartTime := time.Now()
 	var downloadBuffer bytes.Buffer
-	if _, err := io.Copy(&downloadBuffer, reader); err != nil {
+	bytesCopied, err := io.Copy(&downloadBuffer, reader)
+	if err != nil {
 		t.Fatalf("Failed to read: %v", err)
 	}
+	t.Logf("Read %d bytes in %v", bytesCopied, time.Since(readDataStartTime))
+	t.Logf("Total download time: %v", time.Since(readStartTime))
 
 	// Verify
+	t.Log("Verifying data integrity...")
 	downloadedData := downloadBuffer.Bytes()
-	if !bytes.Equal(downloadedData, testData) {
-		t.Errorf("Downloaded data doesn't match. Got %d bytes, want %d bytes", len(downloadedData), len(testData))
-	}
+	t.Logf("Downloaded %d bytes, expected %d bytes", len(downloadedData), len(testData))
 
-	t.Log("Successfully uploaded and downloaded data")
+	if !bytes.Equal(downloadedData, testData) {
+		t.Errorf("Downloaded data doesn't match!")
+		t.Errorf("  Expected: %q", string(testData))
+		t.Errorf("  Got:      %q", string(downloadedData))
+		t.Errorf("  Expected bytes: %v", testData)
+		t.Errorf("  Got bytes:      %v", downloadedData)
+	} else {
+		t.Log("Data integrity verified - content matches!")
+	}
 
 	// Clean up
+	t.Log("Cleaning up test data...")
+	deleteStartTime := time.Now()
 	if err := provider.Delete(ctx, testKey); err != nil {
 		t.Logf("Warning: Failed to clean up test data: %v", err)
+	} else {
+		t.Logf("Test data deleted in %v", time.Since(deleteStartTime))
 	}
+
+	t.Logf("=== Test completed in %v ===", time.Since(startTime))
 }
 
 // TestStorageHealthCheck tests the storage provider health check.
