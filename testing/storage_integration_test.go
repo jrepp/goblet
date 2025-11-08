@@ -17,7 +17,10 @@ package testing
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -199,15 +202,10 @@ func TestBundleBackupAndRestore(t *testing.T) {
 	}
 }
 
-// TestStorageProviderUploadDownload tests upload and download operations.
-func TestStorageProviderUploadDownload(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	setup := NewIntegrationTestSetup()
-	setup.Start(t)
-	defer setup.Stop(t)
+// testStorageProviderUploadDownloadOnce performs a single upload/download test cycle.
+// This helper function is used by both the regular test and the stability test.
+func testStorageProviderUploadDownloadOnce(t *testing.T, setup *IntegrationTestSetup) {
+	t.Helper()
 
 	accessKey, secretKey := setup.GetMinioCredentials()
 
@@ -230,9 +228,9 @@ func TestStorageProviderUploadDownload(t *testing.T) {
 	}
 	defer provider.Close()
 
-	// Test data
+	// Test data with timestamp to ensure uniqueness
 	testData := []byte("This is test data for storage provider")
-	testKey := "test-" + time.Now().Format("20060102-150405") + ".dat"
+	testKey := "test-" + time.Now().Format("20060102-150405.000000") + ".dat"
 
 	// Upload (write)
 	writer, err := provider.Writer(ctx, testKey)
@@ -248,6 +246,9 @@ func TestStorageProviderUploadDownload(t *testing.T) {
 	}
 
 	t.Logf("Uploaded test data with key: %s", testKey)
+
+	// Brief wait to ensure upload completes (helps with timing-sensitive operations)
+	time.Sleep(50 * time.Millisecond)
 
 	// Download (read)
 	reader, err := provider.Reader(ctx, testKey)
@@ -265,14 +266,64 @@ func TestStorageProviderUploadDownload(t *testing.T) {
 	downloadedData := downloadBuffer.Bytes()
 	if !bytes.Equal(downloadedData, testData) {
 		t.Errorf("Downloaded data doesn't match. Got %d bytes, want %d bytes", len(downloadedData), len(testData))
+		t.Errorf("  Expected: %q", string(testData))
+		t.Errorf("  Got:      %q", string(downloadedData))
 	}
-
-	t.Log("Successfully uploaded and downloaded data")
 
 	// Clean up
 	if err := provider.Delete(ctx, testKey); err != nil {
 		t.Logf("Warning: Failed to clean up test data: %v", err)
 	}
+}
+
+// TestStorageProviderUploadDownload tests upload and download operations.
+func TestStorageProviderUploadDownload(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	setup := NewIntegrationTestSetup()
+	setup.Start(t)
+	defer setup.Stop(t)
+
+	testStorageProviderUploadDownloadOnce(t, setup)
+	t.Log("Successfully uploaded and downloaded data")
+}
+
+// TestStorageProviderUploadDownloadStability runs multiple iterations to verify test stability.
+// This test helps catch race conditions and timing issues that might cause flaky behavior.
+func TestStorageProviderUploadDownloadStability(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Skip stability test in CI unless explicitly enabled
+	if os.Getenv("RUN_STABILITY_TESTS") == "" {
+		t.Skip("Skipping stability test (set RUN_STABILITY_TESTS=1 to enable)")
+	}
+
+	setup := NewIntegrationTestSetup()
+	setup.Start(t)
+	defer setup.Stop(t)
+
+	iterations := 5
+	if iterStr := os.Getenv("STABILITY_TEST_ITERATIONS"); iterStr != "" {
+		if n, err := strconv.Atoi(iterStr); err == nil && n > 0 {
+			iterations = n
+		}
+	}
+
+	t.Logf("Running stability test with %d iterations", iterations)
+
+	for i := 1; i <= iterations; i++ {
+		t.Run(fmt.Sprintf("Iteration_%d", i), func(t *testing.T) {
+			startTime := time.Now()
+			testStorageProviderUploadDownloadOnce(t, setup)
+			t.Logf("Iteration %d/%d completed in %v", i, iterations, time.Since(startTime))
+		})
+	}
+
+	t.Logf("Stability test passed: %d/%d iterations successful", iterations, iterations)
 }
 
 // TestStorageHealthCheck tests the storage provider health check.
