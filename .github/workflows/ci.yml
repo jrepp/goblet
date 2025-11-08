@@ -207,7 +207,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v4
       with:
-        enable-cache: true
+        enable-cache: false
 
     - name: Validate markdown links
       run: ./scripts/validate-links.py
