@@ -131,10 +131,11 @@ func (r *managedRepository) lsRefsUpstream(command []*gitprotocolio.ProtocolV2Re
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot construct a request object: %v", err)
 	}
-	t, err := r.config.TokenSource.Token()
+	t, err := r.config.TokenSource(r.upstreamURL)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot obtain an OAuth2 access token for the server: %v", err)
 	}
+	t.SetAuthHeader(req)
 	req.Header.Add("Content-Type", "application/x-git-upload-pack-request")
 	req.Header.Add("Accept", "application/x-git-upload-pack-result")
 	req.Header.Add("Git-Protocol", "version=2")
@@ -325,7 +326,7 @@ func (r *managedRepository) fetchUpstream() (err error) {
 	defer r.mu.Unlock()
 	if splitGitFetch {
 		// Fetch heads and changes first.
-		t, err = r.config.TokenSource.Token()
+		t, err = r.config.TokenSource(r.upstreamURL)
 		if err != nil {
 			err = status.Errorf(codes.Internal, "cannot obtain an OAuth2 access token for the server: %v", err)
 			return err
@@ -337,7 +338,7 @@ func (r *managedRepository) fetchUpstream() (err error) {
 		}
 	}
 	if err == nil {
-		t, err = r.config.TokenSource.Token()
+		t, err = r.config.TokenSource(r.upstreamURL)
 		if err != nil {
 			err = status.Errorf(codes.Internal, "cannot obtain an OAuth2 access token for the server: %v", err)
 			return err
