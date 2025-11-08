@@ -118,7 +118,7 @@ Edit the environment variable in `.github/workflows/ci.yml`:
 
 ```yaml
 env:
-  GO_VERSION: '1.21'  # Change this
+  GO_VERSION: '1.25.3'  # Change this
 ```
 
 #### Skip Integration Tests

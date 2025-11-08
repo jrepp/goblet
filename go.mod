@@ -1,6 +1,6 @@
 module github.com/google/goblet
 
-go 1.25
+go 1.25.3
 
 require (
 	cloud.google.com/go/errorreporting v0.3.2
