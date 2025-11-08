@@ -26,7 +26,7 @@ import (
 	"strings"
 )
 
-// IsolationMode defines how cache is isolated between users/tenants
+// IsolationMode defines how cache is isolated between users/tenants.
 type IsolationMode string
 
 const (
@@ -66,7 +66,7 @@ const (
 	IsolationSidecar IsolationMode = "sidecar"
 )
 
-// IsolationConfig defines how to extract and apply isolation
+// IsolationConfig defines how to extract and apply isolation.
 type IsolationConfig struct {
 	// Mode specifies the isolation strategy
 	Mode IsolationMode
@@ -97,7 +97,7 @@ type IsolationConfig struct {
 	HashIdentifiers bool
 }
 
-// DefaultIsolationConfig returns safe defaults
+// DefaultIsolationConfig returns safe defaults.
 func DefaultIsolationConfig() *IsolationConfig {
 	return &IsolationConfig{
 		Mode:            IsolationSidecar,
@@ -107,7 +107,7 @@ func DefaultIsolationConfig() *IsolationConfig {
 	}
 }
 
-// GetCachePath returns the cache path with appropriate isolation prefix
+// GetCachePath returns the cache path with appropriate isolation prefix.
 func (ic *IsolationConfig) GetCachePath(r *http.Request, cacheRoot string, repoURL *url.URL) (string, error) {
 	if ic == nil {
 		ic = DefaultIsolationConfig()
@@ -140,7 +140,7 @@ func (ic *IsolationConfig) GetCachePath(r *http.Request, cacheRoot string, repoU
 	}
 }
 
-// getUserIdentifier extracts user identifier from request
+// getUserIdentifier extracts user identifier from request.
 func (ic *IsolationConfig) getUserIdentifier(r *http.Request) (string, error) {
 	// Try to get from OIDC claims context
 	claims := GetClaimsFromContext(r.Context())
@@ -182,7 +182,7 @@ func (ic *IsolationConfig) getUserIdentifier(r *http.Request) (string, error) {
 	return "", fmt.Errorf("no user identity found in request")
 }
 
-// getTenantIdentifier extracts tenant identifier from request
+// getTenantIdentifier extracts tenant identifier from request.
 func (ic *IsolationConfig) getTenantIdentifier(r *http.Request) (string, error) {
 	// Try custom header first (higher priority)
 	if ic.TenantHeaderKey != "" {
@@ -230,7 +230,7 @@ func (ic *IsolationConfig) getTenantIdentifier(r *http.Request) (string, error) 
 	return "", fmt.Errorf("no tenant identity found in request")
 }
 
-// sanitizeIdentifier makes identifier safe for use in filesystem paths
+// sanitizeIdentifier makes identifier safe for use in filesystem paths.
 func (ic *IsolationConfig) sanitizeIdentifier(identifier, prefix string) string {
 	if ic.HashIdentifiers {
 		// Use SHA256 hash for privacy and filesystem safety
@@ -266,7 +266,7 @@ func (ic *IsolationConfig) sanitizeIdentifier(identifier, prefix string) string 
 	return safe
 }
 
-// ValidateIsolationConfig checks if configuration is valid
+// Validate checks if configuration is valid.
 func (ic *IsolationConfig) Validate() error {
 	if ic == nil {
 		return fmt.Errorf("isolation config is nil")
@@ -294,22 +294,22 @@ func (ic *IsolationConfig) Validate() error {
 	}
 }
 
-// Claims represents authentication claims from OIDC/OAuth2
+// Claims represents authentication claims from OIDC/OAuth2.
 type Claims struct {
 	Email   string
 	Subject string
 	Groups  []string
 }
 
-// claimsContextKey is the key for storing claims in request context
+// claimsContextKey is the key for storing claims in request context.
 type claimsContextKey struct{}
 
-// SetClaimsInContext stores claims in request context
+// SetClaimsInContext stores claims in request context.
 func SetClaimsInContext(ctx context.Context, claims *Claims) context.Context {
 	return context.WithValue(ctx, claimsContextKey{}, claims)
 }
 
-// GetClaimsFromContext retrieves claims from request context
+// GetClaimsFromContext retrieves claims from request context.
 func GetClaimsFromContext(ctx context.Context) *Claims {
 	claims, ok := ctx.Value(claimsContextKey{}).(*Claims)
 	if !ok {
@@ -318,7 +318,7 @@ func GetClaimsFromContext(ctx context.Context) *Claims {
 	return claims
 }
 
-// SecurityWarning returns a warning message if configuration is unsafe
+// SecurityWarning returns a warning message if configuration is unsafe.
 func (ic *IsolationConfig) SecurityWarning() string {
 	if ic == nil {
 		return "WARNING: No isolation config - using defaults"

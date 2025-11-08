@@ -21,7 +21,7 @@ import (
 	"github.com/google/goblet"
 )
 
-// Example: User-Scoped Isolation for Risk Scanning Service
+// ConfigureUserIsolation demonstrates user-scoped isolation for a risk scanning service.
 //
 // Use case: Different teams scanning different private repositories
 // Each user gets their own cache directory
@@ -58,7 +58,7 @@ func ConfigureUserIsolation() *goblet.ServerConfig {
 	return config
 }
 
-// Example: User-Scoped with Hashed Identifiers
+// ConfigureUserIsolationWithHashing demonstrates user-scoped isolation with hashed identifiers.
 //
 // Use case: Privacy-sensitive deployments where you don't want user emails in filesystem
 // Cache structure: /cache/user-a1b2c3d4/github.com/org/repo
@@ -70,7 +70,7 @@ func ConfigureUserIsolationWithHashing() *goblet.IsolationConfig {
 	}
 }
 
-// Example: User-Scoped with Subject (UUID)
+// ConfigureUserIsolationWithSubject demonstrates user-scoped isolation with subject (UUID).
 //
 // Use case: When OIDC subject (typically UUID) is preferred over email
 // Cache structure: /cache/user-123e4567-e89b-12d3-a456-426614174000/github.com/org/repo

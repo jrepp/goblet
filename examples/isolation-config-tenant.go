@@ -21,7 +21,7 @@ import (
 	"github.com/google/goblet"
 )
 
-// Example: Tenant-Scoped Isolation for Terraform Cloud
+// ConfigureTenantIsolation demonstrates tenant-scoped isolation for Terraform Cloud.
 //
 // Use case: Multiple organizations/workspaces, users within org share cache
 // Cache structure: /cache/tenant-org1/github.com/org/repo
@@ -35,7 +35,7 @@ func ConfigureTenantIsolation() *goblet.IsolationConfig {
 	}
 }
 
-// Example: Tenant-Scoped with HTTP Header
+// ConfigureTenantIsolationWithHeader demonstrates tenant-scoped isolation with HTTP header.
 //
 // Use case: Tenant ID passed via custom header (common in proxies)
 // Header: X-Tenant-ID: acme-corp
@@ -47,7 +47,7 @@ func ConfigureTenantIsolationWithHeader() *goblet.IsolationConfig {
 	}
 }
 
-// Example: Tenant-Scoped with Hashing
+// ConfigureTenantIsolationWithHashing demonstrates tenant-scoped isolation with hashing.
 //
 // Use case: Privacy or special characters in tenant names
 // Cache structure: /cache/tenant-a1b2c3d4/github.com/org/repo
@@ -59,7 +59,7 @@ func ConfigureTenantIsolationWithHashing() *goblet.IsolationConfig {
 	}
 }
 
-// Example: Terraform Cloud Workspace Isolation
+// ConfigureTerraformCloudIsolation demonstrates Terraform Cloud workspace isolation.
 //
 // Use case: Terraform workspaces with different credentials per workspace
 // Header format: X-TFC-Workspace-ID: ws-abc123xyz
@@ -79,7 +79,7 @@ func ConfigureTerraformCloudIsolation() *goblet.IsolationConfig {
 	return config
 }
 
-// Example: Multi-Organization SaaS
+// ConfigureMultiOrgSaaS demonstrates multi-organization SaaS isolation.
 //
 // Use case: SaaS platform with multiple customer organizations
 // OIDC claim: groups = ["org:customer-123", "team:security"]
