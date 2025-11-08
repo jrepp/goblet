@@ -1,0 +1,34 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'loadtest'
+
+scrape_configs:
+  # Scrape Goblet instances
+  - job_name: 'goblet'
+    static_configs:
+      - targets:
+          - 'goblet-1:8080'
+          - 'goblet-2:8080'
+          - 'goblet-3:8080'
+        labels:
+          service: 'goblet'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Scrape HAProxy stats
+  - job_name: 'haproxy'
+    static_configs:
+      - targets:
+          - 'haproxy:8404'
+        labels:
+          service: 'haproxy'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'

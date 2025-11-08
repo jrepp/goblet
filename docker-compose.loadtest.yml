@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  # HAProxy load balancer with consistent hashing
+  haproxy:
+    image: haproxy:2.8-alpine
+    ports:
+      - "8080:8080"
+      - "8404:8404"  # Stats page
+    volumes:
+      - ./loadtest/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - goblet-1
+      - goblet-2
+      - goblet-3
+    networks:
+      - goblet-net
+
+  # Goblet instance 1 - shard A
+  goblet-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - GOBLET_PORT=8080
+      - GOBLET_CACHE_ROOT=/cache
+      - GOBLET_INSTANCE_ID=1
+    volumes:
+      - cache-1:/cache
+    networks:
+      - goblet-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Goblet instance 2 - shard B
+  goblet-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - GOBLET_PORT=8080
+      - GOBLET_CACHE_ROOT=/cache
+      - GOBLET_INSTANCE_ID=2
+    volumes:
+      - cache-2:/cache
+    networks:
+      - goblet-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Goblet instance 3 - shard C
+  goblet-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - GOBLET_PORT=8080
+      - GOBLET_CACHE_ROOT=/cache
+      - GOBLET_INSTANCE_ID=3
+    volumes:
+      - cache-3:/cache
+    networks:
+      - goblet-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./loadtest/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - goblet-net
+
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./loadtest/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+    networks:
+      - goblet-net
+
+  # Load test generator using k6
+  k6:
+    image: grafana/k6:latest
+    profiles:
+      - loadtest
+    volumes:
+      - ./loadtest/k6-script.js:/scripts/test.js:ro
+    command: run /scripts/test.js
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+      - TARGET_URL=http://haproxy:8080
+    depends_on:
+      - haproxy
+    networks:
+      - goblet-net
+
+networks:
+  goblet-net:
+    driver: bridge
+
+volumes:
+  cache-1:
+  cache-2:
+  cache-3:
+  prometheus-data:
+  grafana-data:

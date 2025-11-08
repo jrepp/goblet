@@ -1,0 +1,204 @@
+---
+# ConfigMap for Goblet sidecar configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goblet-sidecar-config
+  namespace: terraform-agents
+data:
+  # Basic configuration - customize based on your auth needs
+  goblet.env: |
+    GOBLET_PORT=8080
+    GOBLET_CACHE_ROOT=/cache
+    GOBLET_LOG_LEVEL=info
+
+---
+# Terraform Agent with Goblet Sidecar
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terraform-agent
+  namespace: terraform-agents
+  labels:
+    app: terraform-agent
+spec:
+  replicas: 10  # Scale to handle load
+  selector:
+    matchLabels:
+      app: terraform-agent
+  template:
+    metadata:
+      labels:
+        app: terraform-agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Shared cache volume between sidecar and main container
+      volumes:
+        - name: git-cache
+          emptyDir:
+            sizeLimit: 10Gi  # Adjust based on your repo sizes
+        - name: goblet-config
+          configMap:
+            name: goblet-sidecar-config
+
+      containers:
+        # Main Terraform Agent Container
+        - name: terraform-agent
+          image: your-terraform-agent:latest
+          env:
+            # Configure git to use local proxy
+            - name: HTTP_PROXY
+              value: "http://localhost:8080"
+            - name: HTTPS_PROXY
+              value: "http://localhost:8080"
+            # Alternatively, configure git directly
+            - name: GIT_CONFIG_COUNT
+              value: "1"
+            - name: GIT_CONFIG_KEY_0
+              value: "http.proxy"
+            - name: GIT_CONFIG_VALUE_0
+              value: "http://localhost:8080"
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+
+        # Goblet Sidecar Container
+        - name: goblet-cache
+          image: goblet:latest  # Build from your Dockerfile
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: goblet-sidecar-config
+          volumeMounts:
+            - name: git-cache
+              mountPath: /cache
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # Git needs to write to cache
+
+      # Lifecycle: Goblet should start before main container needs it
+      initContainers:
+        - name: wait-for-goblet
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until wget -q --spider http://localhost:8080/healthz; do
+                echo "Waiting for Goblet to be ready..."
+                sleep 2
+              done
+              echo "Goblet is ready!"
+
+---
+# Service for metrics scraping (optional)
+apiVersion: v1
+kind: Service
+metadata:
+  name: terraform-agent-metrics
+  namespace: terraform-agents
+  labels:
+    app: terraform-agent
+spec:
+  clusterIP: None  # Headless service for pod-level metrics
+  selector:
+    app: terraform-agent
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+# ServiceMonitor for Prometheus Operator (optional)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: goblet-sidecar
+  namespace: terraform-agents
+  labels:
+    app: terraform-agent
+spec:
+  selector:
+    matchLabels:
+      app: terraform-agent
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+
+---
+# PodDisruptionBudget to ensure availability during rolling updates
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: terraform-agent-pdb
+  namespace: terraform-agents
+spec:
+  minAvailable: 50%
+  selector:
+    matchLabels:
+      app: terraform-agent
+
+---
+# HorizontalPodAutoscaler for dynamic scaling
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: terraform-agent-hpa
+  namespace: terraform-agents
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: terraform-agent
+  minReplicas: 10
+  maxReplicas: 100
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

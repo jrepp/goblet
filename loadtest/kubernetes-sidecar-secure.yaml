@@ -1,0 +1,303 @@
+---
+# SECURE Terraform Agent Deployment with Tenant Isolation
+# This configuration ensures proper isolation for multi-tenant scenarios
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goblet-secure-config
+  namespace: terraform-agents
+data:
+  isolation.json: |
+    {
+      "mode": "tenant",
+      "tenant_header_key": "X-TFC-Workspace-ID",
+      "hash_identifiers": false
+    }
+
+---
+# ServiceAccount with minimal permissions
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: terraform-agent
+  namespace: terraform-agents
+
+---
+# NetworkPolicy to restrict traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: terraform-agent-netpol
+  namespace: terraform-agents
+spec:
+  podSelector:
+    matchLabels:
+      app: terraform-agent
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only allow metrics scraping from Prometheus
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow HTTPS to GitHub/upstream
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow localhost (sidecar communication)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: terraform-agent
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# Deployment with Security Hardening
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terraform-agent-secure
+  namespace: terraform-agents
+  labels:
+    app: terraform-agent
+    security: hardened
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: terraform-agent
+  template:
+    metadata:
+      labels:
+        app: terraform-agent
+        security: hardened
+      annotations:
+        # Security annotations
+        seccomp.security.alpha.kubernetes.io/pod: "runtime/default"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: terraform-agent
+
+      # Security context for pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      volumes:
+        - name: git-cache
+          emptyDir:
+            sizeLimit: 10Gi
+            # Use memory-backed emptyDir for sensitive data (optional)
+            # medium: "Memory"  # Uncomment for in-memory cache
+        - name: goblet-config
+          configMap:
+            name: goblet-secure-config
+        # Optional: Encrypted volume for cache
+        # - name: encrypted-cache
+        #   persistentVolumeClaim:
+        #     claimName: encrypted-cache-pvc
+
+      containers:
+        # Main Terraform Agent Container
+        - name: terraform-agent
+          image: your-terraform-agent:latest
+          env:
+            # Git proxy configuration
+            - name: HTTP_PROXY
+              value: "http://localhost:8080"
+            - name: HTTPS_PROXY
+              value: "http://localhost:8080"
+
+            # Terraform Cloud workspace ID (for tenant isolation)
+            - name: TFC_WORKSPACE_ID
+              value: "ws-example123"  # Should come from pod labels or injection
+
+            # Pass workspace ID to Goblet via custom header
+            - name: GIT_CONFIG_COUNT
+              value: "2"
+            - name: GIT_CONFIG_KEY_0
+              value: "http.proxy"
+            - name: GIT_CONFIG_VALUE_0
+              value: "http://localhost:8080"
+            - name: GIT_CONFIG_KEY_1
+              value: "http.extraHeader"
+            - name: GIT_CONFIG_VALUE_1
+              value: "X-TFC-Workspace-ID: $(TFC_WORKSPACE_ID)"
+
+          # Security context for container
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+
+        # Goblet Sidecar Container (Secure Configuration)
+        - name: goblet-cache
+          image: goblet:latest
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: GOBLET_PORT
+              value: "8080"
+            - name: GOBLET_CACHE_ROOT
+              value: "/cache"
+            - name: GOBLET_LOG_LEVEL
+              value: "info"
+
+            # CRITICAL: Isolation mode configuration
+            - name: GOBLET_ISOLATION_MODE
+              value: "tenant"
+            - name: GOBLET_TENANT_HEADER
+              value: "X-TFC-Workspace-ID"
+
+            # Optional: Enable audit logging
+            - name: GOBLET_AUDIT_LOG
+              value: "true"
+            - name: GOBLET_AUDIT_LOG_PATH
+              value: "/cache/audit.log"
+
+          volumeMounts:
+            - name: git-cache
+              mountPath: /cache
+            - name: goblet-config
+              mountPath: /etc/goblet
+              readOnly: true
+
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # Git needs write access to cache
+            capabilities:
+              drop:
+                - ALL
+
+          # Probes
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+
+---
+# PodSecurityPolicy (if using PSP)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: terraform-agent-psp
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'runtime/default'
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: 'runtime/default'
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  seLinux:
+    rule: 'RunAsAny'
+  supplementalGroups:
+    rule: 'RunAsAny'
+  fsGroup:
+    rule: 'RunAsAny'
+  readOnlyRootFilesystem: false
+
+---
+# ResourceQuota per namespace (tenant isolation at cluster level)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: terraform-agent-quota
+  namespace: terraform-agents
+spec:
+  hard:
+    requests.cpu: "100"
+    requests.memory: 200Gi
+    persistentvolumeclaims: "100"
+    pods: "100"
+
+---
+# LimitRange to prevent resource exhaustion
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: terraform-agent-limits
+  namespace: terraform-agents
+spec:
+  limits:
+    - max:
+        cpu: "4"
+        memory: "8Gi"
+      min:
+        cpu: "100m"
+        memory: "128Mi"
+      type: Container
+    - max:
+        cpu: "8"
+        memory: "16Gi"
+      min:
+        cpu: "100m"
+        memory: "128Mi"
+      type: Pod
