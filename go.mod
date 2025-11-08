@@ -12,7 +12,6 @@ require (
 	github.com/go-git/go-git/v5 v5.16.3
 	github.com/google/gitprotocolio v0.0.0-20210704173409-b5a56823ae52
 	github.com/google/uuid v1.6.0
-	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/minio/minio-go/v7 v7.0.97
 	go.opencensus.io v0.24.0
 	golang.org/x/oauth2 v0.32.0
