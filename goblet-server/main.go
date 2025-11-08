@@ -331,10 +331,10 @@ func main() {
 	}
 
 	config := &goblet.ServerConfig{
-		LocalDiskCacheRoot:         *cacheRoot,
-		URLCanonializer:            urlCanonicalizer,
-		RequestAuthorizer:          authorizer,
-		TokenSource:                func(upstreamURL *url.URL) (*oauth2.Token, error) {
+		LocalDiskCacheRoot: *cacheRoot,
+		URLCanonializer:    urlCanonicalizer,
+		RequestAuthorizer:  authorizer,
+		TokenSource: func(upstreamURL *url.URL) (*oauth2.Token, error) {
 			return ts.Token()
 		},
 		ErrorReporter:              er,
