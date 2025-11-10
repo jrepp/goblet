@@ -33,6 +33,7 @@ func TestTokenSource_URLBasedSelection(t *testing.T) {
 	calledWithURLs := []string{}
 	var mu sync.Mutex
 
+	//nolint:unparam // Test function demonstrating token selection pattern
 	tokenFunc := func(upstreamURL *url.URL) (*oauth2.Token, error) {
 		mu.Lock()
 		calledWithURLs = append(calledWithURLs, upstreamURL.String())
@@ -503,6 +504,7 @@ func TestTokenSource_ConcurrentCalls(t *testing.T) {
 	callCount := 0
 	var mu sync.Mutex
 
+	//nolint:unparam // Test function for concurrency, not error handling
 	tokenFunc := func(upstreamURL *url.URL) (*oauth2.Token, error) {
 		mu.Lock()
 		callCount++
@@ -551,6 +553,7 @@ func TestTokenSource_ConcurrentCalls(t *testing.T) {
 
 // TestTokenSource_EmptyToken tests handling of empty tokens.
 func TestTokenSource_EmptyToken(t *testing.T) {
+	//nolint:unparam // Test function for empty token scenario
 	tokenFunc := func(upstreamURL *url.URL) (*oauth2.Token, error) {
 		// Return a token with empty access token (valid for public repos)
 		return &oauth2.Token{

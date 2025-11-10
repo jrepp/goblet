@@ -127,7 +127,7 @@ func TestManagedRepository_DifferentTokenTypes(t *testing.T) {
 				// Return a minimal git response
 				w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("0000")) // Git flush packet
+				_, _ = w.Write([]byte("0000")) // Git flush packet
 			}))
 			defer upstreamServer.Close()
 
@@ -189,7 +189,7 @@ func TestManagedRepository_EmptyToken(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("0000"))
+		_, _ = w.Write([]byte("0000"))
 	}))
 	defer upstreamServer.Close()
 
@@ -275,7 +275,7 @@ func TestManagedRepository_MultipleTokenCalls(t *testing.T) {
 	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("0000"))
+		_, _ = w.Write([]byte("0000"))
 	}))
 	defer upstreamServer.Close()
 
@@ -419,7 +419,7 @@ func TestManagedRepository_ConcurrentTokenRequests(t *testing.T) {
 	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("0000"))
+		_, _ = w.Write([]byte("0000"))
 	}))
 	defer upstreamServer.Close()
 
