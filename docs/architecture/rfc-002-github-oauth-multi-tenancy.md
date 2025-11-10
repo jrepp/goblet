@@ -1112,7 +1112,7 @@ However, PR #7 alone is **not sufficient** for secure multi-tenant operation. Co
 2. [GitHub OAuth2 Token Types](https://docs.github.com/en/authentication)
 3. [GitHub Enterprise Authentication](https://docs.github.com/en/enterprise-server/authentication)
 4. [RFC-001: Secure Multi-Tenant Cache](secure-multi-tenant-rfc.md)
-5. [PR #7: Upstream Authentication Improvements](https://github.com/jrepp/github-cache-daemon/pull/7)
+5. [PR #7: Upstream Authentication Improvements](https://github.com/jrepp/goblet/pull/7)
 6. [Isolation Strategies](../security/isolation-strategies.md)
 
 ---
