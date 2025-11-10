@@ -21,7 +21,7 @@ Default cache keys include only repository URL, not user identity. This allows a
 **🚨 Your deployment is AT RISK if:**
 - Multiple users share a Goblet instance
 - Users access private repositories with different permissions
-- Multi-tenant SaaS, Terraform Cloud, or security scanning scenarios
+- Multi-tenant SaaS, automated IaC/CI tools, or security scanning scenarios
 
 ## Immediate Actions
 
