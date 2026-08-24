@@ -213,6 +213,22 @@ jobs:
       run: ./scripts/validate-links.py
 
   # CI Status Check - depends on all parallel jobs
+  # Being valid YAML is not the same as being a valid Mergify configuration: a
+  # condition containing ": " parses as a mapping rather than a string, loads
+  # without complaint, and is rejected by Mergify's schema. That shipped here
+  # once already.
+  mergify-config:
+    name: Mergify Config Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install the Mergify CLI
+      run: curl -fsSL https://raw.githubusercontent.com/Mergifyio/mergify-cli/main/install.sh | sh
+
+    - name: Validate .mergify.yml
+      run: mergify config validate --config-file .mergify.yml
+
   ci-complete:
     name: CI Complete
     runs-on: ubuntu-latest
@@ -223,6 +239,7 @@ jobs:
       - test-unit
       - build
       - validate-docs
+      - mergify-config
     steps:
     - name: CI Pipeline Complete
       run: echo "✓ All CI checks passed!"
