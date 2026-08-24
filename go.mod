@@ -14,14 +14,14 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/minio/minio-go/v7 v7.0.97
 	go.opencensus.io v0.24.0
-	golang.org/x/oauth2 v0.32.0
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.255.0
 	google.golang.org/genproto v0.0.0-20251103181224-f26f9409b101
-	google.golang.org/grpc v1.76.0
+	google.golang.org/grpc v1.82.1
 )
 
 require (
-	cel.dev/expr v0.25.0 // indirect
+	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.17.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
@@ -31,7 +31,7 @@ require (
 	cloud.google.com/go/monitoring v1.24.3 // indirect
 	cloud.google.com/go/trace v1.11.7 // indirect
 	dario.cat/mergo v1.0.2 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.30.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.32.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.54.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.54.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -41,12 +41,12 @@ require (
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
-	github.com/cncf/xds/go v0.0.0-20251031190108-5cf4b1949528 // indirect
+	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
-	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
+	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
+	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
@@ -86,7 +86,7 @@ require (
 	github.com/tinylib/msgp v1.3.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/contrib/detectors/gcp v1.38.0 // indirect
+	go.opentelemetry.io/contrib/detectors/gcp v1.43.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
@@ -101,9 +101,9 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20251103181224-f26f9409b101 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251103181224-f26f9409b101 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
