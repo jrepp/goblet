@@ -1,0 +1,250 @@
+# Merge automation.
+#
+# Adapted from jrepp/prism-data-layer. The gate here is `CI Complete` from
+# ci.yml, which has no path filter and so reports on every pull request. It
+# carries no `if: always()`, so a failure upstream leaves it skipped rather
+# than successful, and check-success below is false either way.
+queue_rules:
+  - name: default
+    batch_size: 5
+    batch_max_wait_time: 5min
+
+    queue_conditions:
+      - check-success=CI Complete
+      - -draft
+      - label!=do-not-merge
+      - label!=work-in-progress
+      - base=main
+
+    merge_conditions:
+      - check-success=CI Complete
+      - "#approved-reviews-by>=1"
+      - "#changes-requested-reviews-by=0"
+
+    merge_method: squash
+    commit_message_format:
+      title: pr-title
+      body: pr-body
+
+pull_request_rules:
+  - name: Auto-approve owner PRs
+    conditions:
+      - author=jrepp
+      - check-success=CI Complete
+      - -draft
+    actions:
+      review:
+        type: APPROVE
+        message: "Automatically approving PR from repo owner"
+
+  # Patch and minor bumps only. A major is the update most likely to need a
+  # code change alongside it.
+  - name: Auto-approve Dependabot minor/patch updates
+    conditions:
+      - author=dependabot[bot]
+      - check-success=CI Complete
+      - or:
+          - title~=(?i)^(build|ci)\(deps(-dev)?\): bump .* from .* to .*
+          - title~=^Bump .* from .* to .*
+          - title~=^Update .* requirement from .* to .*
+      - "-title~=(?i)major"
+    actions:
+      review:
+        type: APPROVE
+        message: "Automatically approving minor/patch dependency update"
+
+  - name: Label documentation changes
+    conditions:
+      - or:
+          - files~=^docs/
+          - files~=\.md$
+    actions:
+      label:
+        add:
+          - documentation
+
+  - name: Label infrastructure changes
+    conditions:
+      - or:
+          - files~=^\.github/
+          - files~=^Taskfile\.yml$
+          - files~=^\.golangci\.yml$
+          - files~=^\.goreleaser\.yml$
+          - files~=^Dockerfile
+    actions:
+      label:
+        add:
+          - infrastructure
+
+  - name: Label Go changes
+    conditions:
+      - or:
+          - files~=^cmd/
+          - files~=^auth/
+          - files~=^config/
+          - files~=^google/
+          - files~=\.go$
+    actions:
+      label:
+        add:
+          - go
+
+  - name: Label stale PRs
+    conditions:
+      - updated-at<14 days ago
+      - -closed
+      - -merged
+    actions:
+      label:
+        add:
+          - stale
+      comment:
+        message: |
+          This PR has been inactive for 14 days. Please update it or close it if it's no longer needed.
+
+  - name: Remove stale label on update
+    conditions:
+      - label=stale
+      - updated-at>=1 day ago
+    actions:
+      label:
+        remove:
+          - stale
+
+  - name: Auto-update PRs on main changes
+    conditions:
+      - base=main
+      - -draft
+      - -closed
+      - -merged
+      - label!=do-not-merge
+      - "#commits-behind>5"
+    actions:
+      update: {}
+
+  - name: Comment on CI failures
+    conditions:
+      - check-failure=CI Complete
+      - -draft
+    actions:
+      comment:
+        message: |
+          CI failed. The same checks run locally:
+
+          ```bash
+          task lint
+          task test
+          ```
+
+  - name: Label draft PRs
+    conditions:
+      - draft
+    actions:
+      label:
+        add:
+          - work-in-progress
+
+  - name: Remove WIP label when draft is removed
+    conditions:
+      - -draft
+      - label=work-in-progress
+    actions:
+      label:
+        remove:
+          - work-in-progress
+
+  # Size labelling, carried over from prism-data-layer unchanged. File count
+  # rather than lines changed: Mergify has no lines-changed attribute.
+  - name: Label PR size - XS
+    conditions:
+      - "#files<=5"
+    actions:
+      label:
+        add:
+          - size/xs
+        remove:
+          - size/s
+          - size/m
+          - size/l
+          - size/xl
+
+  - name: Label PR size - S
+    conditions:
+      - "#files>5"
+      - "#files<=10"
+    actions:
+      label:
+        add:
+          - size/s
+        remove:
+          - size/xs
+          - size/m
+          - size/l
+          - size/xl
+
+  - name: Label PR size - M
+    conditions:
+      - "#files>10"
+      - "#files<=20"
+    actions:
+      label:
+        add:
+          - size/m
+        remove:
+          - size/xs
+          - size/s
+          - size/l
+          - size/xl
+
+  - name: Label PR size - L
+    conditions:
+      - "#files>20"
+      - "#files<=50"
+    actions:
+      label:
+        add:
+          - size/l
+        remove:
+          - size/xs
+          - size/s
+          - size/m
+          - size/xl
+
+  - name: Label PR size - XL
+    conditions:
+      - "#files>50"
+    actions:
+      label:
+        add:
+          - size/xl
+        remove:
+          - size/xs
+          - size/s
+          - size/m
+          - size/l
+      comment:
+        message: |
+          This PR is very large (XL). Consider breaking it into smaller, more reviewable PRs.
+
+  - name: Label conflicting PRs
+    conditions:
+      - conflict
+    actions:
+      label:
+        add:
+          - has-conflicts
+      comment:
+        message: |
+          This PR has merge conflicts with the base branch. Please resolve them.
+
+  - name: Remove conflict label when resolved
+    conditions:
+      - -conflict
+      - label=has-conflicts
+    actions:
+      label:
+        remove:
+          - has-conflicts
+
+merge_protections_settings:
+  auto_merge_conditions: true
