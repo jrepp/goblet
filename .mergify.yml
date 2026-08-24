@@ -5,6 +5,44 @@
 # carries no `if: always()`, so a failure upstream leaves it skipped rather
 # than successful, and check-success below is false either way.
 queue_rules:
+  # Dependency updates first: Mergify uses the first queue whose conditions
+  # match, so this has to precede `default`.
+  #
+  # It drops the approval requirement, and only for this traffic. Nothing is
+  # lost by that -- the approval was always going to come from the
+  # auto-approve rule, never from a person reading the diff -- and the gate
+  # that actually says the bump is safe is CI Complete, which is identical to
+  # `default`'s.
+  #
+  # Majors do not match and fall through to `default`, which still needs an
+  # approval: they are the update most likely to need a code change beside
+  # them.
+  - name: dependencies
+    batch_size: 5
+    batch_max_wait_time: 5min
+
+    queue_conditions:
+      - author=dependabot[bot]
+      - check-success=CI Complete
+      - -draft
+      - label!=do-not-merge
+      - label!=work-in-progress
+      - base=main
+      - or:
+          - 'title~=(?i)^(build|ci)\(deps(-dev)?\): bump .* from .* to .*'
+          - 'title~=^Bump .* from .* to .*'
+          - 'title~=^Update .* requirement from .* to .*'
+      - '-title~=(?i)major'
+
+    merge_conditions:
+      - check-success=CI Complete
+      - "#changes-requested-reviews-by=0"
+
+    merge_method: squash
+    commit_message_format:
+      title: pr-title
+      body: pr-body
+
   - name: default
     batch_size: 5
     batch_max_wait_time: 5min
