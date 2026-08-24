@@ -43,10 +43,14 @@ pull_request_rules:
     conditions:
       - author=dependabot[bot]
       - check-success=CI Complete
+      # Single-quoted, all three. The first contains ": " inside the regex,
+      # and unquoted that makes YAML read the list item as a mapping rather
+      # than a condition string -- valid YAML, rejected by Mergify's schema.
+      # The other two are quoted to keep the block uniform.
       - or:
-          - title~=(?i)^(build|ci)\(deps(-dev)?\): bump .* from .* to .*
-          - title~=^Bump .* from .* to .*
-          - title~=^Update .* requirement from .* to .*
+          - 'title~=(?i)^(build|ci)\(deps(-dev)?\): bump .* from .* to .*'
+          - 'title~=^Bump .* from .* to .*'
+          - 'title~=^Update .* requirement from .* to .*'
       - "-title~=(?i)major"
     actions:
       review:
